@@ -31,7 +31,7 @@ function recentDates(days = 7) {
   return arr;
 }
 
-export default function Home() {
+export default function Program() {
   const router = useRouter();
   const routerReady = router.isReady;
 
@@ -40,7 +40,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [channelFilter, setChannelFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
 
   const topSlot = useAdSlot('home_top');
   const bottomSlot = useAdSlot('home_bottom');
@@ -53,7 +52,6 @@ export default function Home() {
     const q = router.query;
     if (q.date) setDate(q.date);
     if (q.channel) setChannelFilter(q.channel);
-    if (q.category) setCategoryFilter(q.category);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routerReady]);
 
@@ -62,10 +60,9 @@ export default function Home() {
     if (!routerReady) return;
     const query = { date };
     if (channelFilter) query.channel = channelFilter;
-    if (categoryFilter) query.category = categoryFilter;
-    router.replace({ pathname: '/', query }, undefined, { shallow: true });
+    router.replace({ pathname: '/program', query }, undefined, { shallow: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routerReady, date, channelFilter, categoryFilter]);
+  }, [routerReady, date, channelFilter]);
 
   useEffect(() => {
     if (!routerReady) return;
@@ -74,7 +71,7 @@ export default function Home() {
       setLoading(true);
       setError(null);
       let query = supabase
-        .from('tvdb_shopping')
+        .from('tvdb_program')
         .select('*')
         .eq('broadcast_date', date)
         .order('time_start', { ascending: true })
@@ -92,12 +89,8 @@ export default function Home() {
   const dateList = recentDates(7);
 
   const channels = Array.from(new Set(rows.map(r => r.channel))).sort();
-  const categories = Array.from(new Set(rows.map(r => r.category).filter(Boolean))).sort();
 
-  const filtered = rows.filter(r =>
-    (!channelFilter || r.channel === channelFilter) &&
-    (!categoryFilter || r.category === categoryFilter)
-  );
+  const filtered = rows.filter(r => (!channelFilter || r.channel === channelFilter));
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', gap: 16, maxWidth: 1440, margin: '0 auto', padding: '24px 16px' }}>
@@ -141,11 +134,11 @@ export default function Home() {
           <option value="">전체 채널</option>
           {channels.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 6 }}>
-          <option value="">전체 분류</option>
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
         <span style={{ color: '#888', fontSize: 13 }}>{filtered.length}건</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666', marginLeft: 'auto' }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, background: '#fff3cd', border: '1px solid #f0d68a', display: 'inline-block' }} />
+          생활·건강 (어르신 시청 위주)
+        </span>
       </div>
 
       {loading && <p>불러오는 중...</p>}
@@ -157,23 +150,21 @@ export default function Home() {
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #222' }}>
               <th style={{ padding: '8px 6px' }}>시간</th>
               <th style={{ padding: '8px 6px' }}>채널</th>
-              <th style={{ padding: '8px 6px' }}>상품명</th>
-              <th style={{ padding: '8px 6px' }}>분류</th>
-              <th style={{ padding: '8px 6px' }}>가격</th>
+              <th style={{ padding: '8px 6px' }}>프로그램명</th>
+              <th style={{ padding: '8px 6px' }}>장르</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map(r => (
-              <tr key={r.id} style={{ borderBottom: '1px solid #eee' }}>
+              <tr key={r.id} style={{ borderBottom: '1px solid #eee', background: r.is_life_health_target ? '#fff3cd' : undefined }}>
                 <td style={{ padding: '6px' }}>{r.time_start}</td>
                 <td style={{ padding: '6px' }}>{r.channel}</td>
-                <td style={{ padding: '6px' }}>{r.product_name}</td>
-                <td style={{ padding: '6px' }}>{r.category}</td>
-                <td style={{ padding: '6px' }}>{r.price}</td>
+                <td style={{ padding: '6px' }}>{r.program_name}</td>
+                <td style={{ padding: '6px' }}>{r.genre}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 16, color: '#888' }}>이 날짜엔 데이터가 없습니다.</td></tr>
+              <tr><td colSpan={4} style={{ padding: 16, color: '#888' }}>이 날짜엔 데이터가 없습니다.</td></tr>
             )}
           </tbody>
         </table>

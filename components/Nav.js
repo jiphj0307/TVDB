@@ -1,8 +1,10 @@
+
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 
 const LINKS = [
   { href: '/', label: '홈쇼핑 · 편성표' },
+  { href: '/program', label: '📺 일반방송' },
   { href: '/food', label: '🍑 과일 · 건기식 · 식품' },
 ];
 
