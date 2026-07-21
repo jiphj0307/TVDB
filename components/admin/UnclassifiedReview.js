@@ -70,30 +70,35 @@ export default function UnclassifiedReview() {
       {loading ? <p>불러오는 중...</p> : items.length === 0 ? (
         <p style={{ color: '#8aaa8a' }}>미분류 후보가 없습니다.</p>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #d1e8d1', color: '#4b6e4b' }}>
-              <th style={{ padding: '4px 6px' }}>상품명</th>
-              <th style={{ padding: '4px 6px' }}>원래 카테고리</th>
-              <th style={{ padding: '4px 6px', width: 60, textAlign: 'right' }}>채널수</th>
-              <th style={{ padding: '4px 6px', width: 60, textAlign: 'right' }}>건수</th>
-              <th style={{ padding: '4px 6px', width: 100, textAlign: 'right' }}>기간</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map(item => (
-              <tr key={item.product_name} style={{ borderBottom: '1px solid #eef6ee' }}>
-                <td style={{ padding: '4px 6px' }}>{item.product_name}</td>
-                <td style={{ padding: '4px 6px', color: '#8aaa8a' }}>{item.category}</td>
-                <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{item.channels.size}</td>
-                <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{item.count}</td>
-                <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a', whiteSpace: 'nowrap' }}>
-                  {item.first === item.last ? mdKo(item.first) : `${mdKo(item.first)}~${mdKo(item.last)}`}
-                </td>
+        <>
+          <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>총 {items.length}개</p>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #d1e8d1', color: '#4b6e4b' }}>
+                <th style={{ padding: '4px 6px', width: 40, textAlign: 'right' }}>#</th>
+                <th style={{ padding: '4px 6px' }}>상품명</th>
+                <th style={{ padding: '4px 6px' }}>원래 카테고리</th>
+                <th style={{ padding: '4px 6px', width: 60, textAlign: 'right' }}>채널수</th>
+                <th style={{ padding: '4px 6px', width: 60, textAlign: 'right' }}>건수</th>
+                <th style={{ padding: '4px 6px', width: 100, textAlign: 'right' }}>기간</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((item, i) => (
+                <tr key={item.product_name} style={{ borderBottom: '1px solid #eef6ee' }}>
+                  <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{i + 1}</td>
+                  <td style={{ padding: '4px 6px' }}>{item.product_name}</td>
+                  <td style={{ padding: '4px 6px', color: '#8aaa8a' }}>{item.category}</td>
+                  <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{item.channels.size}</td>
+                  <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{item.count}</td>
+                  <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a', whiteSpace: 'nowrap' }}>
+                    {item.first === item.last ? mdKo(item.first) : `${mdKo(item.first)}~${mdKo(item.last)}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );
