@@ -22,6 +22,8 @@ export default function Home() {
 
   const topSlot = useAdSlot('home_top');
   const bottomSlot = useAdSlot('home_bottom');
+  const leftSlot = useAdSlot('home_left');
+  const rightSlot = useAdSlot('home_right');
 
   // URL 쿼리스트링 -> 상태로 최초 1회 복원 (새로고침해도 유지됨)
   useEffect(() => {
@@ -76,7 +78,12 @@ export default function Home() {
   );
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 1100, margin: '0 auto', padding: '24px 16px', color: '#222' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', gap: 16, maxWidth: 1440, margin: '0 auto', padding: '24px 16px' }}>
+      <div className="tvdb-sidebar" style={{ flexShrink: 0, width: 160 }}>
+        <AdSlot slot="home_left" label="광고" slotData={leftSlot} />
+      </div>
+
+      <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 1100, width: '100%', color: '#222' }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>TVDB</h1>
       <p style={{ color: '#666', marginTop: 0, marginBottom: 20 }}>홈쇼핑·방송 편성 데이터 아카이브</p>
 
@@ -154,6 +161,17 @@ export default function Home() {
       <div style={{ marginTop: 32, paddingTop: 16, borderTop: '1px solid #eee', fontSize: 13 }}>
         <a href="/admin" style={{ color: '#888', textDecoration: 'none' }}>admin</a>
       </div>
+      </div>
+
+      <div className="tvdb-sidebar" style={{ flexShrink: 0, width: 160 }}>
+        <AdSlot slot="home_right" label="광고" slotData={rightSlot} />
+      </div>
+
+      <style jsx>{`
+        @media (max-width: 1279px) {
+          .tvdb-sidebar { display: none; }
+        }
+      `}</style>
     </div>
   );
 }
