@@ -8,6 +8,27 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+const WEEKDAY_KR = ['일', '월', '화', '수', '목', '금', '토'];
+
+function toDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// 최근 N일(오늘 포함) 날짜 목록. 날짜 탭 UI에 씀.
+function recentDates(days = 7) {
+  const arr = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    arr.push(d);
+  }
+  return arr;
+}
+
 export default function Home() {
   const router = useRouter();
   const routerReady = router.isReady;
@@ -69,6 +90,8 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [routerReady, date, tab]);
 
+  const dateList = recentDates(7);
+
   const channels = Array.from(new Set(rows.map(r => r.channel))).sort();
   const categories = Array.from(new Set(rows.map(r => r.category).filter(Boolean))).sort();
 
@@ -91,13 +114,28 @@ export default function Home() {
         <AdSlot slot="home_top" label="광고" slotData={topSlot} />
       </div>
 
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
+        {dateList.map(d => {
+          const ds = toDateStr(d);
+          const active = ds === date;
+          return (
+            <button
+              key={ds}
+              onClick={() => setDate(ds)}
+              style={{
+                flex: '1 0 64px', padding: '8px 6px', border: '1px solid #ccc', borderRadius: 6,
+                background: active ? '#222' : '#fff', color: active ? '#fff' : '#222',
+                cursor: 'pointer', textAlign: 'center', lineHeight: 1.4,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{d.getMonth() + 1}.{d.getDate()}</div>
+              <div style={{ fontSize: 11, opacity: 0.75 }}>{WEEKDAY_KR[d.getDay()]}</div>
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 6 }}
-        />
         <div style={{ display: 'flex', border: '1px solid #ccc', borderRadius: 6, overflow: 'hidden' }}>
           <button
             onClick={() => { setTab('shopping'); setChannelFilter(''); setCategoryFilter(''); }}
