@@ -1,5 +1,6 @@
 const NAV = [
-  { id: 'program_info', label: '프로그램 정보 관리', icon: '📺' },
+  { id: 'broadcast', label: '일반방송 관리', icon: '📺' },
+  { id: 'shopping', label: '홈쇼핑 관리', icon: '🛍️' },
   { id: 'coupang', label: '쿠팡 관리', icon: '🛒' },
   { id: 'adsense', label: '광고 관리', icon: '📢' },
 ]

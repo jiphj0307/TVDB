@@ -1,0 +1,120 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../../lib/supabaseClient';
+import { S } from './AdminUI';
+
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+function dowKo(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return DOW[d.getDay()];
+}
+
+export default function ShoppingPanel({ showToast }) {
+  const [channels, setChannels] = useState([]);
+  const [activeChannel, setActiveChannel] = useState('');
+  const [schedule, setSchedule] = useState([]); // 선택 채널의 최근 7일 편성
+  const [note, setNote] = useState('');
+  const [savedNote, setSavedNote] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadChannels(); }, []);
+  useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
+
+  async function loadChannels() {
+    const { data } = await supabase.from('tvdb_shopping').select('channel').limit(5000);
+    const uniq = Array.from(new Set((data || []).map(r => r.channel).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
+    setChannels(uniq);
+    if (uniq.length > 0) setActiveChannel(uniq[0]);
+    else setLoading(false);
+  }
+
+  async function loadChannelData(channel) {
+    setLoading(true);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    const fromDate = weekAgo.toISOString().slice(0, 10);
+
+    const [{ data: sched }, { data: noteRow }] = await Promise.all([
+      supabase.from('tvdb_shopping').select('id, broadcast_date, time_start, product_name, category, price')
+        .eq('channel', channel).gte('broadcast_date', fromDate)
+        .order('broadcast_date', { ascending: true }).order('time_start', { ascending: true }),
+      supabase.from('tvdb_channel_notes').select('*').eq('channel', channel).maybeSingle(),
+    ]);
+
+    setSchedule(sched || []);
+    setNote(noteRow?.note || '');
+    setSavedNote(noteRow?.note || '');
+    setLoading(false);
+  }
+
+  async function saveNote() {
+    const { error } = await supabase.from('tvdb_channel_notes').upsert({
+      channel: activeChannel, note: note.trim(), updated_at: new Date().toISOString(),
+    }, { onConflict: 'channel' });
+    if (error) { showToast('❌ 메모 저장 실패: ' + error.message); return; }
+    setSavedNote(note.trim());
+    showToast(`✅ [${activeChannel}] 메모 저장 완료`);
+  }
+
+  const byDate = {};
+  schedule.forEach(row => {
+    if (!byDate[row.broadcast_date]) byDate[row.broadcast_date] = [];
+    byDate[row.broadcast_date].push(row);
+  });
+  const dates = Object.keys(byDate).sort();
+
+  return (
+    <div>
+      <div style={S.cardTitle}>🛍️ 홈쇼핑 정보 관리</div>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
+        {channels.map(ch => (
+          <button key={ch} onClick={() => setActiveChannel(ch)} style={{
+            padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
+            background: activeChannel === ch ? '#16a34a' : '#fff',
+            color: activeChannel === ch ? '#fff' : '#4b6e4b',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+          }}>{ch}</button>
+        ))}
+      </div>
+
+      {!activeChannel ? <p>채널 데이터가 없습니다.</p> : loading ? <p>불러오는 중...</p> : (
+        <>
+          <div style={S.card}>
+            <div style={S.cardTitle}>📅 {activeChannel} — 최근 {dates.length}일 편성</div>
+            {dates.length === 0 && <p style={{ color: '#8aaa8a' }}>편성 데이터가 없습니다. (매일 수집이 쌓이면 최대 7일치가 여기 보입니다)</p>}
+            {dates.map(date => (
+              <div key={date} style={{ marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8, color: '#15803d' }}>{date} ({dowKo(date)})</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <tbody>
+                    {byDate[date].map(row => (
+                      <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
+                        <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
+                        <td style={{ padding: '4px 6px' }}>{row.product_name}</td>
+                        <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.category}</td>
+                        <td style={{ padding: '4px 6px', color: '#8aaa8a', textAlign: 'right' }}>{row.price}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+
+          <div style={S.card}>
+            <div style={S.cardTitle}>📝 {activeChannel} 정보 출처 메모</div>
+            <p style={{ fontSize: 12, color: '#8aaa8a', marginTop: -8, marginBottom: 12 }}>
+              홈쇼핑은 상품명이 거의 매일 바뀌어서 상품 단위 등록 대신 채널 단위 메모만 관리합니다.
+            </p>
+            <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} style={S.textarea}
+              placeholder="예: 공식 앱 상품상세 페이지에서 확인 가능" />
+            <button type="button" onClick={saveNote} disabled={note === savedNote}
+              style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12, marginTop: 8, opacity: note === savedNote ? 0.5 : 1 }}>
+              메모 저장
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

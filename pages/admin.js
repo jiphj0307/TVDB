@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import AdminSidebar from '../components/admin/AdminSidebar';
-import ProgramInfoPanel from '../components/admin/ProgramInfoPanel';
+import BroadcastPanel from '../components/admin/BroadcastPanel';
+import ShoppingPanel from '../components/admin/ShoppingPanel';
 import CoupangPanel from '../components/admin/CoupangPanel';
 import AdsensePanel from '../components/admin/AdsensePanel';
 import { S, Toast } from '../components/admin/AdminUI';
@@ -43,7 +44,7 @@ function LoginScreen({ onLogin }) {
 export default function Admin() {
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('program_info');
+  const [activeTab, setActiveTab] = useState('broadcast');
   const [toast, setToast] = useState('');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
@@ -68,7 +69,8 @@ export default function Admin() {
         <AdminSidebar activeTab={activeTab} onNav={setActiveTab} onLogout={handleLogout} />
         <main style={{ flex: 1, minWidth: 0, padding: '32px 28px 60px' }}>
           <div style={{ maxWidth: 980, margin: '0 auto' }}>
-            {activeTab === 'program_info' && <ProgramInfoPanel showToast={showToast} />}
+            {activeTab === 'broadcast' && <BroadcastPanel showToast={showToast} />}
+            {activeTab === 'shopping' && <ShoppingPanel showToast={showToast} />}
             {activeTab === 'coupang' && <CoupangPanel />}
             {activeTab === 'adsense' && <AdsensePanel showToast={showToast} />}
           </div>
