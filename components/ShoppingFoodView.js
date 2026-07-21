@@ -6,6 +6,35 @@ function mdKo(dateStr) {
   return `${d.getMonth() + 1}.${d.getDate()}`;
 }
 
+// 탭 버튼에 "몇 개 채널 · 몇 회 방송"을 적어주기 위해, 중첩된 트리(과일은 province->city->rows,
+// 건기식·식품은 __flat__->rows)를 상관없이 재귀로 훑어서 채널수/총 방송횟수를 센다.
+function collectStats(node) {
+  const channels = new Set();
+  let count = 0;
+  (function walk(n) {
+    if (Array.isArray(n)) {
+      count += n.length;
+      for (const r of n) channels.add(r.channel);
+      return;
+    }
+    for (const k of Object.keys(n)) walk(n[k]);
+  })(node);
+  return { channelCount: channels.size, count };
+}
+
+function TabButton({ label, stats, active, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '6px 14px', border: '1px solid #ccc', borderRadius: 6,
+      background: active ? '#222' : '#fff', color: active ? '#fff' : '#222',
+      cursor: 'pointer', fontSize: 13, textAlign: 'center', lineHeight: 1.5,
+    }}>
+      {label}
+      <div style={{ fontSize: 10.5, opacity: 0.75 }}>{stats.channelCount}개 채널 · {stats.count}회</div>
+    </button>
+  );
+}
+
 // 같은 상품이 여러 채널·날짜에 걸쳐 반복 편성되는 게 보통이라(=잘 팔린다는 신호),
 // 행을 그대로 나열하지 않고 상품명 기준으로 묶어서 "몇 개 채널에서 몇 번 팔렸는지"만 보여준다.
 // 방송 횟수 많은 순으로 정렬 — 그게 "잘 팔리는" 신호 그 자체라서.
@@ -104,10 +133,19 @@ function AggregatedTable({ rows }) {
   );
 }
 
-// 과일 섹션: 하위 과일 종류를 ㄱㄴㄷ순 탭으로 전환, 그 안에서 도(province) 단위로 한 카드씩 묶고
+// 과일 섹션: 하위 과일 종류를 방송횟수 많은 순 탭으로 전환, 그 안에서 도(province) 단위로 한 카드씩 묶고
 // 시/군(city)을 아는 경우엔 그 카드 안에 소제목으로만 구분한다 (예: "경북" 카드 하나 안에 의성/영천/상주 소제목).
 function FruitSection({ label, subMap }) {
-  const subKeys = useMemo(() => Object.keys(subMap).sort((a, b) => a.localeCompare(b, 'ko')), [subMap]);
+  const subStats = useMemo(() => {
+    const m = {};
+    for (const sub of Object.keys(subMap)) m[sub] = collectStats(subMap[sub]);
+    return m;
+  }, [subMap]);
+  // 방송횟수(=관심·판매량 신호) 많은 순으로 탭 정렬 — 가나다순 대신 동적으로 매겨진다
+  const subKeys = useMemo(
+    () => Object.keys(subMap).sort((a, b) => subStats[b].count - subStats[a].count),
+    [subMap, subStats]
+  );
   const [active, setActive] = useState(subKeys[0] || '');
   useEffect(() => {
     if (!subKeys.includes(active)) setActive(subKeys[0] || '');
@@ -122,11 +160,7 @@ function FruitSection({ label, subMap }) {
       <h2 style={{ fontSize: 18, borderBottom: '2px solid #222', paddingBottom: 6, marginBottom: 14 }}>{label}</h2>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
         {subKeys.map(sub => (
-          <button key={sub} onClick={() => setActive(sub)} style={{
-            padding: '6px 14px', border: '1px solid #ccc', borderRadius: 6,
-            background: active === sub ? '#222' : '#fff', color: active === sub ? '#fff' : '#222',
-            cursor: 'pointer', fontSize: 13,
-          }}>{sub}</button>
+          <TabButton key={sub} label={sub} stats={subStats[sub]} active={active === sub} onClick={() => setActive(sub)} />
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
@@ -155,9 +189,18 @@ function FruitSection({ label, subMap }) {
   );
 }
 
-// 건기식 · 식품 섹션: 과일과 동일하게 하위 종류를 ㄱㄴㄷ순 탭으로 전환
+// 건기식 · 식품 섹션: 과일과 동일하게 하위 종류를 방송횟수 많은 순 탭으로 전환
 function FlatSection({ label, subMap }) {
-  const subKeys = useMemo(() => Object.keys(subMap).sort((a, b) => a.localeCompare(b, 'ko')), [subMap]);
+  const subStats = useMemo(() => {
+    const m = {};
+    for (const sub of Object.keys(subMap)) m[sub] = collectStats(subMap[sub]);
+    return m;
+  }, [subMap]);
+  // 방송횟수(=관심·판매량 신호) 많은 순으로 탭 정렬 — 가나다순 대신 동적으로 매겨진다
+  const subKeys = useMemo(
+    () => Object.keys(subMap).sort((a, b) => subStats[b].count - subStats[a].count),
+    [subMap, subStats]
+  );
   const [active, setActive] = useState(subKeys[0] || '');
   useEffect(() => {
     if (!subKeys.includes(active)) setActive(subKeys[0] || '');
@@ -171,11 +214,7 @@ function FlatSection({ label, subMap }) {
       <h2 style={{ fontSize: 18, borderBottom: '2px solid #222', paddingBottom: 6, marginBottom: 14 }}>{label}</h2>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
         {subKeys.map(sub => (
-          <button key={sub} onClick={() => setActive(sub)} style={{
-            padding: '6px 14px', border: '1px solid #ccc', borderRadius: 6,
-            background: active === sub ? '#222' : '#fff', color: active === sub ? '#fff' : '#222',
-            cursor: 'pointer', fontSize: 13,
-          }}>{sub}</button>
+          <TabButton key={sub} label={sub} stats={subStats[sub]} active={active === sub} onClick={() => setActive(sub)} />
         ))}
       </div>
       <div style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
