@@ -29,6 +29,29 @@ function mdKo(dateStr) {
   return `${d.getMonth() + 1}.${d.getDate()}`;
 }
 
+// 브라우저 기본 confirm() 대신 쓰는 모달 — window.confirm은 주소창 밑에 "tvdb-xxx.vercel.app 내용:"
+// 같은 도메인이 노출되는 브라우저 UI라 사이트 안 화면처럼 안 보임.
+function ConfirmModal({ message, onConfirm, onCancel }) {
+  if (!message) return null;
+  return (
+    <div onClick={onCancel} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 12, padding: 22, maxWidth: 420, width: '100%',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <p style={{ fontSize: 14, color: '#0f1f0f', marginTop: 0, marginBottom: 18, lineHeight: 1.5 }}>{message}</p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onCancel} style={{ ...S.btnGhost, padding: '8px 18px', fontSize: 13 }}>취소</button>
+          <button type="button" onClick={onConfirm} style={{ ...S.btn('#dc2626'), padding: '8px 18px', fontSize: 13 }}>제외</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UnclassifiedReview({ showToast }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +59,7 @@ export default function UnclassifiedReview({ showToast }) {
   const [topChoice, setTopChoice] = useState('food');
   const [labelInput, setLabelInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState(null); // 제외 확인 모달 대상 product_name
 
   useEffect(() => { load(); }, []);
 
@@ -152,11 +176,8 @@ export default function UnclassifiedReview({ showToast }) {
                         if (editing === item.product_name) { setEditing(null); return; }
                         setEditing(item.product_name); setTopChoice('food'); setLabelInput('');
                       }} style={{ ...S.btnGhost, padding: '3px 10px', fontSize: 11.5, marginRight: 6 }}>분류</button>
-                      <button type="button" disabled={busy} onClick={() => {
-                        if (window.confirm(`"${item.product_name}"을(를) 미분류 목록에서 제외할까요? (방송 기록은 남고 이 목록에서만 빠집니다)`)) {
-                          ignoreItem(item.product_name);
-                        }
-                      }} style={{ ...S.btnGhost, padding: '3px 10px', fontSize: 11.5, color: '#dc2626', borderColor: '#f3c7c7' }}>제외</button>
+                      <button type="button" disabled={busy} onClick={() => setConfirmTarget(item.product_name)}
+                        style={{ ...S.btnGhost, padding: '3px 10px', fontSize: 11.5, color: '#dc2626', borderColor: '#f3c7c7' }}>제외</button>
                     </td>
                   </tr>
                   {editing === item.product_name && (
@@ -184,6 +205,11 @@ export default function UnclassifiedReview({ showToast }) {
           </table>
         </>
       )}
+      <ConfirmModal
+        message={confirmTarget ? `"${confirmTarget}"을(를) 미분류 목록에서 제외할까요? (방송 기록은 남고 이 목록에서만 빠집니다)` : null}
+        onCancel={() => setConfirmTarget(null)}
+        onConfirm={() => { const t = confirmTarget; setConfirmTarget(null); ignoreItem(t); }}
+      />
     </div>
   );
 }
