@@ -6,20 +6,101 @@ function mdKo(dateStr) {
   return `${d.getMonth() + 1}.${d.getDate()}`;
 }
 
-function ProductTable({ rows }) {
+// 같은 상품이 여러 채널·날짜에 걸쳐 반복 편성되는 게 보통이라(=잘 팔린다는 신호),
+// 행을 그대로 나열하지 않고 상품명 기준으로 묶어서 "몇 개 채널에서 몇 번 팔렸는지"만 보여준다.
+// 방송 횟수 많은 순으로 정렬 — 그게 "잘 팔리는" 신호 그 자체라서.
+function aggregateByProduct(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    let e = map.get(r.product_name);
+    if (!e) {
+      e = { product_name: r.product_name, channels: new Set(), count: 0, last: r.broadcast_date, rows: [] };
+      map.set(r.product_name, e);
+    }
+    e.channels.add(r.channel);
+    e.count += 1;
+    e.rows.push(r);
+    if (r.broadcast_date > e.last) e.last = r.broadcast_date;
+  }
+  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
+
+// 상품명 클릭 시 언제·어디서 방송했는지 전체 내역을 보여주는 모달
+function DetailModal({ item, onClose }) {
+  if (!item) return null;
+  const sorted = [...item.rows].sort((a, b) => {
+    const da = a.broadcast_date + (a.time_start || '');
+    const db = b.broadcast_date + (b.time_start || '');
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-      <tbody>
-        {rows.map(row => (
-          <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
-            <td style={{ padding: '3px 6px', width: 44, color: '#888', whiteSpace: 'nowrap' }}>{mdKo(row.broadcast_date)}</td>
-            <td style={{ padding: '3px 6px', width: 70, color: '#888', whiteSpace: 'nowrap' }}>{row.channel}</td>
-            <td style={{ padding: '3px 6px' }}>{row.product_name}</td>
-            <td style={{ padding: '3px 6px', width: 70, color: '#888', textAlign: 'right', whiteSpace: 'nowrap' }}>{row.price || ''}</td>
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 560, width: '100%',
+        maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{item.product_name}</div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
+        </div>
+        <div style={{ fontSize: 12.5, color: '#666', marginBottom: 12 }}>
+          {item.channels.size}개 채널 · 총 {item.count}회 방송
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc', color: '#888' }}>
+              <th style={{ padding: '4px 6px', fontWeight: 600 }}>날짜</th>
+              <th style={{ padding: '4px 6px', fontWeight: 600 }}>시간</th>
+              <th style={{ padding: '4px 6px', fontWeight: 600 }}>채널</th>
+              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>가격</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(row => (
+              <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>{mdKo(row.broadcast_date)}</td>
+                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap', color: '#888' }}>{row.time_start?.slice(0, 5) || ''}</td>
+                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>{row.channel}</td>
+                <td style={{ padding: '4px 6px', textAlign: 'right', color: '#888', whiteSpace: 'nowrap' }}>{row.price || ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AggregatedTable({ rows }) {
+  const items = useMemo(() => aggregateByProduct(rows), [rows]);
+  const [selected, setSelected] = useState(null);
+  return (
+    <>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc', color: '#888' }}>
+            <th style={{ padding: '3px 6px', fontWeight: 600 }}>상품명</th>
+            <th style={{ padding: '3px 6px', width: 56, textAlign: 'right', fontWeight: 600 }}>채널수</th>
+            <th style={{ padding: '3px 6px', width: 56, textAlign: 'right', fontWeight: 600 }}>방송횟수</th>
+            <th style={{ padding: '3px 6px', width: 48, textAlign: 'right', fontWeight: 600 }}>최근</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {items.map(item => (
+            <tr key={item.product_name} onClick={() => setSelected(item)} style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}>
+              <td style={{ padding: '3px 6px' }}>{item.product_name}</td>
+              <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.channels.size}</td>
+              <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.count}</td>
+              <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888', whiteSpace: 'nowrap' }}>{mdKo(item.last)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <DetailModal item={selected} onClose={() => setSelected(null)} />
+    </>
   );
 }
 
@@ -57,12 +138,12 @@ function FruitSection({ label, subMap }) {
             <div key={province} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: '#222', marginBottom: 8 }}>{province}</div>
               {onlyFlat ? (
-                <ProductTable rows={cities.__flat__} />
+                <AggregatedTable rows={cities.__flat__} />
               ) : (
                 cityKeys.map(city => (
                   <div key={city} style={{ marginBottom: 8 }}>
                     {city !== '__flat__' && <div style={{ fontSize: 11.5, color: '#666', marginBottom: 4 }}>{city}</div>}
-                    <ProductTable rows={cities[city]} />
+                    <AggregatedTable rows={cities[city]} />
                   </div>
                 ))
               )}
@@ -98,7 +179,7 @@ function FlatSection({ label, subMap }) {
         ))}
       </div>
       <div style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
-        <ProductTable rows={rows} />
+        <AggregatedTable rows={rows} />
       </div>
     </div>
   );
@@ -113,7 +194,8 @@ export default function ShoppingFoodView({ tree }) {
     <div>
       <p style={{ color: '#666', fontSize: 13, marginTop: 0, marginBottom: 20 }}>
         최근 수집된 전체 기간의 홈쇼핑 상품 중 과일 · 건강기능식품 · 식품만 골라 종류별로 묶어서 보여줍니다.
-        과일은 도 단위로 묶고(같은 경북이어도 시/군을 알면 카드 안에 소제목으로 구분), 각 묶음 안에서는 방송 날짜순으로 정렬했습니다.
+        같은 상품이 여러 채널·날짜에 반복 편성되는 건 그만큼 잘 팔린다는 신호라 행으로 나열하지 않고
+        상품명 기준으로 묶어서 채널수·방송횟수로 보여주고, 방송횟수가 많은 순으로 정렬했습니다.
       </p>
       {TOP_ORDER.map(({ key, label }) => {
         const subMap = tree?.[key];
