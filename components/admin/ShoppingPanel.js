@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
 import UnclassifiedReview from './UnclassifiedReview';
+import CollectionStatus from './CollectionStatus';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 function dowKo(dateStr) {
@@ -24,7 +25,7 @@ export default function ShoppingPanel({ showToast }) {
   const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('');
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('channel'); // 'channel' | 'unclassified'
+  const [viewMode, setViewMode] = useState('status'); // 'status' | 'channel' | 'unclassified'
 
   useEffect(() => { loadChannels(); }, []);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
@@ -110,6 +111,12 @@ export default function ShoppingPanel({ showToast }) {
       <div style={S.cardTitle}>🛍️ 홈쇼핑 정보 관리</div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        <button onClick={() => setViewMode('status')} style={{
+          padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
+          background: viewMode === 'status' ? '#16a34a' : '#fff',
+          color: viewMode === 'status' ? '#fff' : '#4b6e4b',
+          fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+        }}>📊 채널별 수집 현황</button>
         <button onClick={() => setViewMode('channel')} style={{
           padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
           background: viewMode === 'channel' ? '#16a34a' : '#fff',
@@ -124,6 +131,7 @@ export default function ShoppingPanel({ showToast }) {
         }}>🔍 미분류 검토</button>
       </div>
 
+      {viewMode === 'status' && <CollectionStatus />}
       {viewMode === 'unclassified' && <UnclassifiedReview />}
 
       {viewMode === 'channel' && (

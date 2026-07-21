@@ -4,9 +4,9 @@
 // Vercel 공식 mcp-handler 패키지로 Streamable HTTP 프로토콜을 구현합니다.
 // Fresh Season(minsiljang0/Fresh_Season) 프로젝트의 app/api/mcp/route.js를
 // 그대로 옮겨오되, TVDB에는 블로그/키워드리서치/스레드 기능이 없으므로
-// 범용 인프라 툴 11개만 남긴 서브셋입니다.
+// 범용 인프라 툴만 남긴 서브셋입니다.
 //
-// 노출 툴 11개:
+// 노출 툴 12개:
 //   - list_tables          : DB 테이블 목록 조회
 //   - get_rows              : DB 테이블 데이터 조회 (필터·검색·정렬·페이징)
 //   - upsert_row            : DB 행 추가·수정
@@ -19,6 +19,9 @@
 //   - append_system_prompt  : Claude 프로젝트 지침 맨 아래에 추가
 //   - capture_screenshot    : 웹페이지 그래프·차트를 헤드리스 브라우저로 캡처해 Storage에 저장
 //                             (홈쇼핑/방송사 편성표 페이지가 이미지가 아니라 JS로 그려질 때 대비용)
+//   - get_shopping_collection_status : 홈쇼핑 16개 채널 수집 현황 + 채널별 수집 지침을 한번에 조회
+//                             (2026-07-22 추가 — 세션이 끊겨도 "어디까지 됐고 어떻게 이어서 하는지"를
+//                             대화 기록 없이 이 툴 하나로 알 수 있게 하기 위함. 아래 등록부 참고)
 //
 // ── system_prompts 테이블 (Supabase에 최초 1회 생성 필요) ─────────────────
 // get_system_prompt/update_system_prompt/append_system_prompt가 사용합니다.
@@ -429,6 +432,56 @@ const baseHandler = createMcpHandler(
         return { content: [{ type: 'text', text: `✅ SQL 실행 완료\n${JSON.stringify(data, null, 2)}` }] }
       }
     )
+
+    // ── 홈쇼핑 채널별 수집 현황 + 수집 지침 조회 ─────────────────────────
+    // "루틴화" 목적: 세션이 끊기거나 사람이 바뀌어도, 대화 기록에 의존하지 않고
+    // 이 툴 하나로 "어느 채널이 며칠치 밀렸는지"와 "그 채널을 어떻게 수집하는지"를
+    // 동시에 알 수 있게 한다. tvdb_channel_notes.note에 채널별 URL/curl 또는 브라우저
+    // 자동화 방식이 이미 상세히 적혀 있으므로(get_system_prompt 요약보다 이쪽이 더 상세),
+    // tvdb_shopping의 실제 데이터(=진행상황, 거짓말할 수 없음)와 그대로 조인해서 반환한다.
+    server.registerTool(
+      'get_shopping_collection_status',
+      {
+        title: '홈쇼핑 채널별 수집 현황 + 수집 지침 조회',
+        description:
+          '16개 홈쇼핑 채널이 tvdb_shopping에 실제로 어느 날짜까지 수집돼 있는지(첫 수집일·마지막 ' +
+          '수집일·건수·오늘 기준 며칠 뒤처졌는지)와, 각 채널을 어떻게 수집하는지(tvdb_channel_notes에 ' +
+          '저장된 소스 URL·curl/브라우저 자동화 방식 메모)를 한 번에 반환한다. 홈쇼핑 스크래핑을 새로 ' +
+          '이어서 할 때 이전 대화 기록이 없어도 이 툴 하나만 호출하면 "어디까지 됐고 어떻게 채널별로 ' +
+          '가져오면 되는지"를 바로 알 수 있다. 가장 뒤처진(오래된) 채널이 먼저 오도록 정렬해서 반환하므로, ' +
+          '위에서부터 순서대로 그 채널의 "마지막 수집일 다음날"부터 이어서 스크래핑하면 된다.',
+        inputSchema: {},
+      },
+      async () => {
+        const { data: statusRows, error: e1 } = await supabase.rpc('run_sql_query', {
+          sql: `SELECT channel, MIN(broadcast_date) AS first_date, MAX(broadcast_date) AS last_date, COUNT(*) AS cnt FROM tvdb_shopping GROUP BY channel ORDER BY last_date ASC`
+        })
+        if (e1) return { content: [{ type: 'text', text: `❌ ${e1.message}` }], isError: true }
+
+        const { data: notes } = await supabase.from('tvdb_channel_notes').select('channel, note')
+        const noteMap = {}
+        ;(notes || []).forEach(n => { noteMap[n.channel] = n.note })
+
+        const todayKST = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        const lines = (statusRows || []).map(r => {
+          const behindDays = Math.round((new Date(todayKST) - new Date(r.last_date)) / 86400000)
+          const status = behindDays <= 0 ? '오늘까지 완료' : `${behindDays}일 뒤처짐`
+          const note = noteMap[r.channel] ? noteMap[r.channel] : '(수집 방식 메모 없음 — tvdb_channel_notes에 없는 채널)'
+          return `### ${r.channel}\n- 보유 기간: ${r.first_date} ~ ${r.last_date} (${r.cnt}건)\n- 상태: ${status}\n- 수집방법: ${note}`
+        })
+
+        return {
+          content: [{
+            type: 'text',
+            text: `# 홈쇼핑 채널별 수집 현황 (오늘 KST: ${todayKST})\n\n` +
+              `뒤처진 채널부터 정렬됨. 각 채널의 "마지막 수집일 다음날"부터 아래 "수집방법"에 적힌 방식대로 ` +
+              `이어서 스크래핑한 뒤, upsert_row 또는 run_sql로 tvdb_shopping에 INSERT할 것 ` +
+              `(unique 제약: broadcast_date, time_start, channel, product_name — 겹치는 건 자동으로 걸러짐).\n\n` +
+              lines.join('\n\n'),
+          }],
+        }
+      }
+    )
   },
   {
     instructions:
@@ -436,7 +489,10 @@ const baseHandler = createMcpHandler(
       'Supabase DB 직접 조회·수정 도구(list_tables/get_rows/upsert_row/delete_row/run_sql), ' +
       'GitHub 저장소(jiphj0307/TVDB) 파일 확인 도구(list_github_files/get_github_file), ' +
       'Claude 프로젝트 지침 조회·저장 도구(get_system_prompt/update_system_prompt/append_system_prompt), ' +
-      '방송사·홈쇼핑 공식 페이지의 그래프·표를 실제로 캡처해서 저장하는 도구(capture_screenshot)를 제공한다. ' +
+      '방송사·홈쇼핑 공식 페이지의 그래프·표를 실제로 캡처해서 저장하는 도구(capture_screenshot), ' +
+      '홈쇼핑 채널별 수집 현황+수집 지침을 한번에 조회하는 도구(get_shopping_collection_status)를 제공한다. ' +
+      '홈쇼핑 데이터를 새로 수집/이어서 할 때는 가장 먼저 get_shopping_collection_status를 호출해서 ' +
+      '어느 채널이 며칠치 밀렸고 어떻게 가져오는지부터 확인할 것. ' +
       'DB 테이블을 조회/수정하거나, 저장소 파일을 확인하거나, 프로젝트 지침을 읽고 쓸 때 이 서버의 도구를 사용한다.',
   },
   { basePath: '/api', maxDuration: 30, verboseLogs: true }
