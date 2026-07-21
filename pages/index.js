@@ -79,7 +79,7 @@ export default function Home() {
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', gap: 16, maxWidth: 1440, margin: '0 auto', padding: '24px 16px' }}>
-      <div className="tvdb-sidebar" style={{ flexShrink: 0, width: 160 }}>
+      <div className="tvdb-sidebar" style={{ flexShrink: 0, width: 160, alignSelf: 'flex-start', position: 'sticky', top: 24 }}>
         <AdSlot slot="home_left" label="광고" slotData={leftSlot} />
       </div>
 
@@ -163,7 +163,7 @@ export default function Home() {
       </div>
       </div>
 
-      <div className="tvdb-sidebar" style={{ flexShrink: 0, width: 160 }}>
+      <div className="tvdb-sidebar" style={{ flexShrink: 0, width: 160, alignSelf: 'flex-start', position: 'sticky', top: 24 }}>
         <AdSlot slot="home_right" label="광고" slotData={rightSlot} />
       </div>
 
