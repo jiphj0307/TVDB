@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
 import Head from 'next/head';
 import AdminSidebar from '../components/admin/AdminSidebar';
 import BroadcastPanel from '../components/admin/BroadcastPanel';
@@ -41,7 +42,10 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+const VALID_TABS = ['broadcast', 'shopping', 'coupang', 'adsense'];
+
 export default function Admin() {
+  const router = useRouter();
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('broadcast');
@@ -53,6 +57,18 @@ export default function Admin() {
     if (sessionStorage.getItem('tvdb_admin') === '1') setAuthed(true);
     setLoading(false);
   }, []);
+
+  // 새로고침해도 어느 탭(일반방송/홈쇼핑/쿠팡/광고)에 있었는지 유지
+  useEffect(() => {
+    if (!router.isReady) return;
+    const q = router.query.tab;
+    if (VALID_TABS.includes(q)) setActiveTab(q);
+  }, [router.isReady, router.query.tab]);
+
+  function navTo(tabId) {
+    setActiveTab(tabId);
+    router.replace({ pathname: '/admin', query: { tab: tabId } }, undefined, { shallow: true });
+  }
 
   const handleLogout = () => {
     sessionStorage.removeItem('tvdb_admin');
@@ -66,7 +82,7 @@ export default function Admin() {
     <>
       <Head><title>Admin — TVDB</title></Head>
       <div style={{ minHeight: '100vh', background: '#f5f9f5', fontFamily: "'Outfit', sans-serif", color: '#0f1f0f', display: 'flex' }}>
-        <AdminSidebar activeTab={activeTab} onNav={setActiveTab} onLogout={handleLogout} />
+        <AdminSidebar activeTab={activeTab} onNav={navTo} onLogout={handleLogout} />
         <main style={{ flex: 1, minWidth: 0, padding: '32px 28px 60px' }}>
           <div style={{ maxWidth: 980, margin: '0 auto' }}>
             {activeTab === 'broadcast' && <BroadcastPanel showToast={showToast} />}

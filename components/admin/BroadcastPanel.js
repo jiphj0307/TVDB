@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
 
@@ -7,12 +8,18 @@ function dowKo(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   return DOW[d.getDay()];
 }
+function mdKo(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getMonth() + 1}.${d.getDate()}`;
+}
 
 const emptyForm = { program_name: '', genre: '', description: '', source_url: '', verified: true };
 
 export default function BroadcastPanel({ showToast }) {
+  const router = useRouter();
   const [channels, setChannels] = useState([]);
   const [activeChannel, setActiveChannel] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
   const [schedule, setSchedule] = useState([]); // 선택 채널의 최근 7일 편성
   const [infoRows, setInfoRows] = useState([]); // 선택 채널의 등록된 프로그램 정보
   const [missing, setMissing] = useState([]);
@@ -25,12 +32,26 @@ export default function BroadcastPanel({ showToast }) {
   useEffect(() => { loadChannels(); }, []);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
 
+  // 채널/날짜 선택 -> URL 쿼리스트링 동기화 (새로고침해도 유지됨)
+  useEffect(() => {
+    if (!router.isReady || !activeChannel) return;
+    const query = { tab: 'broadcast', channel: activeChannel };
+    if (selectedDate) query.date = selectedDate;
+    router.replace({ pathname: '/admin', query }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChannel, selectedDate]);
+
   async function loadChannels() {
     const { data } = await supabase.from('tvdb_program').select('channel').limit(5000);
     const uniq = Array.from(new Set((data || []).map(r => r.channel).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
     setChannels(uniq);
-    if (uniq.length > 0) setActiveChannel(uniq[0]);
-    else setLoading(false);
+    if (uniq.length > 0) {
+      const q = router.query;
+      const fromQuery = q.tab === 'broadcast' && q.channel && uniq.includes(q.channel) ? q.channel : uniq[0];
+      setActiveChannel(fromQuery);
+    } else {
+      setLoading(false);
+    }
   }
 
   async function loadChannelData(channel) {
@@ -60,6 +81,14 @@ export default function BroadcastPanel({ showToast }) {
       if (!matched) { seen.add(p.program_name); miss.push(p.program_name); }
     });
     setMissing(miss);
+
+    const availableDates = Array.from(new Set((sched || []).map(r => r.broadcast_date))).sort();
+    const q = router.query;
+    const wantedDate = q.tab === 'broadcast' && q.channel === channel && q.date ? q.date : '';
+    setSelectedDate(
+      wantedDate && availableDates.includes(wantedDate) ? wantedDate : (availableDates[availableDates.length - 1] || '')
+    );
+
     setLoading(false);
   }
 
@@ -114,14 +143,15 @@ export default function BroadcastPanel({ showToast }) {
     byDate[row.broadcast_date].push(row);
   });
   const dates = Object.keys(byDate).sort();
+  const rowsOfSelectedDate = byDate[selectedDate] || [];
 
   return (
     <div>
       <div style={S.cardTitle}>📺 일반방송 정보 관리</div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
         {channels.map(ch => (
-          <button key={ch} onClick={() => setActiveChannel(ch)} style={{
+          <button key={ch} onClick={() => { setActiveChannel(ch); setSelectedDate(''); }} style={{
             padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
             background: activeChannel === ch ? '#16a34a' : '#fff',
             color: activeChannel === ch ? '#fff' : '#4b6e4b',
@@ -135,22 +165,43 @@ export default function BroadcastPanel({ showToast }) {
           <div style={S.card}>
             <div style={S.cardTitle}>📅 {activeChannel} — 최근 {dates.length}일 편성</div>
             {dates.length === 0 && <p style={{ color: '#8aaa8a' }}>편성 데이터가 없습니다. (매일 수집이 쌓이면 최대 7일치가 여기 보입니다)</p>}
-            {dates.map(date => (
-              <div key={date} style={{ marginBottom: 16 }}>
-                <div style={{ fontWeight: 700, marginBottom: 8, color: '#15803d' }}>{date} ({dowKo(date)})</div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <tbody>
-                    {byDate[date].map(row => (
-                      <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
-                        <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
-                        <td style={{ padding: '4px 6px' }}>{row.program_name}</td>
-                        <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.genre}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+            {dates.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
+                {dates.map(d => {
+                  const active = d === selectedDate;
+                  return (
+                    <button key={d} onClick={() => setSelectedDate(d)} style={{
+                      flex: '1 0 60px', padding: '6px 4px', borderRadius: 8,
+                      border: `1.5px solid ${active ? '#16a34a' : '#d1e8d1'}`,
+                      background: active ? '#16a34a' : '#fff',
+                      color: active ? '#fff' : '#4b6e4b',
+                      cursor: 'pointer', textAlign: 'center', fontFamily: "'Outfit', sans-serif",
+                    }}>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{mdKo(d)}</div>
+                      <div style={{ fontSize: 11, opacity: 0.85 }}>{dowKo(d)}</div>
+                    </button>
+                  );
+                })}
               </div>
-            ))}
+            )}
+
+            {selectedDate && (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <tbody>
+                  {rowsOfSelectedDate.map(row => (
+                    <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
+                      <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
+                      <td style={{ padding: '4px 6px' }}>{row.program_name}</td>
+                      <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.genre}</td>
+                    </tr>
+                  ))}
+                  {rowsOfSelectedDate.length === 0 && (
+                    <tr><td style={{ padding: 16, color: '#8aaa8a' }}>이 날짜엔 데이터가 없습니다.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
 
           <div style={S.card}>
