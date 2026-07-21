@@ -4,9 +4,13 @@ import { S } from './AdminUI';
 
 const emptyForm = { program_name: '', channel: '', genre: '', description: '', source_url: '', verified: true };
 
+const GROUP_LABEL = { tv: '📺 TV 채널', shopping: '🛍️ 홈쇼핑 채널' };
+
 export default function ProgramInfoPanel({ showToast }) {
   const [infoRows, setInfoRows] = useState([]);
-  const [missing, setMissing] = useState([]);
+  const [channels, setChannels] = useState([]); // [{ channel, source, missing:[], registered:[] }]
+  const [notes, setNotes] = useState({}); // channel -> 편집 중인 메모
+  const [savedNotes, setSavedNotes] = useState({}); // channel -> 마지막 저장된 메모 (dirty 체크용)
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -18,16 +22,43 @@ export default function ProgramInfoPanel({ showToast }) {
     setInfoRows(info || []);
 
     const { data: programs } = await supabase.from('tvdb_program').select('program_name, channel').limit(2000);
+    const { data: shopping } = await supabase.from('tvdb_shopping').select('product_name, channel').limit(2000);
+    const { data: noteRows } = await supabase.from('tvdb_channel_notes').select('*');
+
+    const noteMap = {};
+    (noteRows || []).forEach(n => { noteMap[n.channel] = n.note || ''; });
+    setNotes(noteMap);
+    setSavedNotes(noteMap);
+
+    const items = [
+      ...(programs || []).map(p => ({ name: p.program_name, channel: p.channel, source: 'tv' })),
+      ...(shopping || []).map(p => ({ name: p.product_name, channel: p.channel, source: 'shopping' })),
+    ];
+
+    const byChannel = {};
     const seen = new Set();
-    const miss = [];
-    (programs || []).forEach(p => {
-      const matched = (info || []).some(i => i.channel === p.channel && p.program_name.startsWith(i.program_name));
-      if (!matched && !seen.has(p.channel + '|' + p.program_name)) {
-        seen.add(p.channel + '|' + p.program_name);
-        miss.push(p);
+    items.forEach(({ name, channel, source }) => {
+      if (!channel || !name) return;
+      const key = channel + '|' + name;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (!byChannel[channel]) byChannel[channel] = { channel, source, missing: [], registered: [] };
+
+      const matched = (info || []).find(i => i.channel === channel && name.startsWith(i.program_name));
+      if (matched) {
+        if (!byChannel[channel].registered.some(r => r.program_name === matched.program_name)) {
+          byChannel[channel].registered.push(matched);
+        }
+      } else {
+        byChannel[channel].missing.push({ program_name: name, channel });
       }
     });
-    setMissing(miss);
+
+    const list = Object.values(byChannel).sort((a, b) => {
+      if (a.source !== b.source) return a.source === 'tv' ? -1 : 1;
+      return a.channel.localeCompare(b.channel, 'ko');
+    });
+    setChannels(list);
     setLoading(false);
   }
 
@@ -90,23 +121,38 @@ export default function ProgramInfoPanel({ showToast }) {
     showToast(`✅ ${updated}건 반영 완료`);
   }
 
+  async function saveNote(channel) {
+    const note = (notes[channel] || '').trim();
+    const { error } = await supabase.from('tvdb_channel_notes').upsert({
+      channel,
+      note,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'channel' });
+    if (error) { showToast('❌ 메모 저장 실패: ' + error.message); return; }
+    setSavedNotes(s => ({ ...s, [channel]: note }));
+    showToast(`✅ [${channel}] 메모 저장 완료`);
+  }
+
+  const totalMissing = channels.reduce((sum, c) => sum + c.missing.length, 0);
+  const totalRegistered = channels.reduce((sum, c) => sum + c.registered.length, 0);
+
   return (
     <div>
       <div style={S.card}>
         <div style={S.cardTitle}>📺 프로그램 정보 등록</div>
         <p style={{ fontSize: 13, color: '#4b6e4b', marginTop: -12, marginBottom: 18 }}>
-          프로그램명 → 장르·설명·출처 URL을 등록합니다. 회차 번호("101회" 등)는 자동으로 무시하고 매칭합니다.
+          프로그램명(또는 홈쇼핑 상품명) → 장르·설명·출처 URL을 등록합니다. 회차 번호("101회" 등)는 자동으로 무시하고 매칭합니다.
         </p>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
-              <label style={S.label}>프로그램명</label>
+              <label style={S.label}>프로그램명 / 상품명</label>
               <input placeholder="예: 엄지의 제왕" value={form.program_name}
                 onChange={e => setForm(f => ({ ...f, program_name: e.target.value }))} style={S.input} />
             </div>
             <div>
               <label style={S.label}>채널</label>
-              <input placeholder="예: MBN" value={form.channel}
+              <input placeholder="예: MBN 또는 GS홈쇼핑" value={form.channel}
                 onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} style={S.input} />
             </div>
           </div>
@@ -117,7 +163,7 @@ export default function ProgramInfoPanel({ showToast }) {
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={S.label}>설명</label>
-            <textarea placeholder="이 프로그램이 어떤 내용인지" value={form.description} rows={3}
+            <textarea placeholder="이 프로그램(상품)이 어떤 내용인지" value={form.description} rows={3}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={S.textarea} />
           </div>
           <div style={{ marginBottom: 12 }}>
@@ -143,49 +189,83 @@ export default function ProgramInfoPanel({ showToast }) {
         <button onClick={handleApplyGenre} disabled={applying} style={{ ...S.btn('#2a7a2a'), opacity: applying ? 0.6 : 1 }}>
           {applying ? '반영 중...' : '등록된 장르를 tvdb_program에 전부 반영'}
         </button>
+        <p style={{ fontSize: 12, color: '#8aaa8a', marginTop: 8, marginBottom: 0 }}>
+          홈쇼핑은 tvdb_shopping에 이미 category 컬럼이 있어서 이 버튼의 반영 대상에서는 제외했습니다.
+        </p>
       </div>
 
       {loading ? <p>불러오는 중...</p> : (
         <>
-          <div style={S.card}>
-            <div style={S.cardTitle}>❓ 아직 미등록 프로그램 ({missing.length}개)</div>
-            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-              {missing.map((p, idx) => (
-                <div key={idx} onClick={() => startNewFromMissing(p)} style={{ ...S.row, cursor: 'pointer' }}>
-                  <b>{p.channel}</b> — {p.program_name}
-                </div>
-              ))}
-              {missing.length === 0 && <p style={{ color: '#8aaa8a' }}>없음 (전부 등록됨)</p>}
-            </div>
-          </div>
+          <p style={{ fontSize: 13, color: '#4b6e4b', marginBottom: 12 }}>
+            전체 등록 {totalRegistered}건 / 미등록 {totalMissing}건 — 채널 {channels.length}개
+          </p>
+          {['tv', 'shopping'].map(src => {
+            const group = channels.filter(c => c.source === src);
+            if (group.length === 0) return null;
+            return (
+              <div key={src} style={S.card}>
+                <div style={S.cardTitle}>{GROUP_LABEL[src]} ({group.length}개 채널)</div>
+                {group.map(g => (
+                  <details key={g.channel} style={{ marginBottom: 10, border: '1px solid #eef6ee', borderRadius: 10, padding: '10px 14px' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+                      {g.channel} — 등록 {g.registered.length} / 미등록 {g.missing.length}
+                    </summary>
 
-          <div style={S.card}>
-            <div style={S.cardTitle}>✅ 등록된 프로그램 ({infoRows.length}개)</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid #d1e8d1' }}>
-                  <th style={{ padding: 6 }}>채널</th>
-                  <th style={{ padding: 6 }}>프로그램명</th>
-                  <th style={{ padding: 6 }}>장르</th>
-                  <th style={{ padding: 6 }}>확인됨</th>
-                  <th style={{ padding: 6 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {infoRows.map(row => (
-                  <tr key={row.program_name} style={{ borderBottom: '1px solid #eef6ee' }}>
-                    <td style={{ padding: 6 }}>{row.channel}</td>
-                    <td style={{ padding: 6 }}>{row.program_name}</td>
-                    <td style={{ padding: 6 }}>{row.genre}</td>
-                    <td style={{ padding: 6 }}>{row.verified ? '✅' : '❌'}</td>
-                    <td style={{ padding: 6 }}>
-                      <button onClick={() => startEdit(row)} style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12 }}>수정</button>
-                    </td>
-                  </tr>
+                    <div style={{ marginTop: 12 }}>
+                      <label style={S.label}>이 채널 프로그램(상품) 정보를 어떻게 가져오는지 메모</label>
+                      <textarea rows={2} value={notes[g.channel] || ''}
+                        onChange={e => setNotes(n => ({ ...n, [g.channel]: e.target.value }))}
+                        style={S.textarea}
+                        placeholder="예: 나무위키에 채널 프로그램별 문서가 잘 정리돼있음 / 공식 앱 상품상세 페이지에서 확인" />
+                      <button type="button" onClick={() => saveNote(g.channel)}
+                        disabled={(notes[g.channel] || '') === (savedNotes[g.channel] || '')}
+                        style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12, marginTop: 6, opacity: (notes[g.channel] || '') === (savedNotes[g.channel] || '') ? 0.5 : 1 }}>
+                        메모 저장
+                      </button>
+                    </div>
+
+                    {g.missing.length > 0 && (
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>❓ 미등록 ({g.missing.length})</div>
+                        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                          {g.missing.map((p, idx) => (
+                            <div key={idx} onClick={() => startNewFromMissing(p)} style={{ ...S.row, cursor: 'pointer' }}>
+                              {p.program_name}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {g.registered.length > 0 && (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 14 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '2px solid #d1e8d1' }}>
+                            <th style={{ padding: 6 }}>프로그램명 / 상품명</th>
+                            <th style={{ padding: 6 }}>장르</th>
+                            <th style={{ padding: 6 }}>확인됨</th>
+                            <th style={{ padding: 6 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.registered.map(row => (
+                            <tr key={row.program_name} style={{ borderBottom: '1px solid #eef6ee' }}>
+                              <td style={{ padding: 6 }}>{row.program_name}</td>
+                              <td style={{ padding: 6 }}>{row.genre}</td>
+                              <td style={{ padding: 6 }}>{row.verified ? '✅' : '❌'}</td>
+                              <td style={{ padding: 6 }}>
+                                <button onClick={() => startEdit(row)} style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12 }}>수정</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </details>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            );
+          })}
         </>
       )}
     </div>
