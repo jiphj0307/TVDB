@@ -36,8 +36,23 @@ export default function ShoppingPanel({ showToast }) {
   }, [activeChannel, selectedDate]);
 
   async function loadChannels() {
-    const { data } = await supabase.from('tvdb_shopping').select('channel').limit(5000);
-    const uniq = Array.from(new Set((data || []).map(r => r.channel).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
+    // Supabase(PostgREST)는 클라이언트가 .limit()을 크게 줘도 서버 max-rows 설정(기본 1000)에서
+    // 잘라버린다 — 데이터가 쌓여 1000행을 넘으면 뒤쪽 채널이 통째로 안 보이게 된다.
+    // range()로 끝까지 페이지네이션해서 전체 채널을 다 모은다.
+    const seen = new Set();
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('tvdb_shopping')
+        .select('channel')
+        .range(from, from + pageSize - 1);
+      if (error || !data) break;
+      data.forEach(r => { if (r.channel) seen.add(r.channel); });
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    const uniq = Array.from(seen).sort((a, b) => a.localeCompare(b, 'ko'));
     setChannels(uniq);
     if (uniq.length > 0) {
       const q = router.query;
