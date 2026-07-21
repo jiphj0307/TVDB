@@ -15,11 +15,25 @@ function daysBehind(dateStr, today) {
   return Math.round((b - a) / 86400000);
 }
 
+const CLAUDE_COMMAND =
+  'TVDB MCP 접속해서 get_shopping_collection_status 확인하고, 뒤처진 채널부터 바로 이어서 스크래핑해서 tvdb_shopping에 채워줘.';
+
 export default function CollectionStatus() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => { load(); }, []);
+
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText(CLAUDE_COMMAND);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt('복사가 안 되면 아래 텍스트를 직접 선택해서 복사하세요:', CLAUDE_COMMAND);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -57,6 +71,12 @@ export default function CollectionStatus() {
         오래된(뒤처진) 채널이 위로 오도록 정렬했으니, 다음에 스크래핑할 땐 여기 위쪽 채널부터
         "마지막 수집일 다음날"부터 이어서 하면 됩니다.
       </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <button type="button" onClick={copyCommand} style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12 }}>
+          📋 클로드에게 전달할 명령 복사
+        </button>
+        {copied && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>✅ 복사됨 — 새 대화에 붙여넣으세요</span>}
+      </div>
       {loading ? <p>불러오는 중...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>

@@ -10,6 +10,15 @@ import { S } from './AdminUI';
 // lib/foodClassifier.js에 키워드를 추가하면 다음 재분류 때부터 잡힌다.
 const FOOD_LIKE_CATEGORIES = ['식품', '가공식품', '신선식품'];
 
+// 스크래핑 단계에서 "식품"으로 잘못 태깅된 비식품(염색약/의료기기/가전 등). 분류기가 아무리
+// 좋아져도 이건 식품이 아니라서 영영 안 잡히니, 여기서 미리 걸러서 목록을 깨끗하게 유지한다.
+const NON_FOOD_NOISE_RE = /염색제|의료기기|선풍기|무릎.*지지|서큘레이터|안마|마사지기|텀블러|블렌더|믹서기|냄비|후라이팬|프라이팬|칼세트|타파웨어|저울|공기청정기|가습기|제습기/;
+
+function mdKo(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getMonth() + 1}.${d.getDate()}`;
+}
+
 export default function UnclassifiedReview() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +32,7 @@ export default function UnclassifiedReview() {
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from('tvdb_shopping')
-        .select('product_name, channel, category')
+        .select('product_name, channel, category, broadcast_date')
         .eq('food_top', '')
         .in('category', FOOD_LIKE_CATEGORIES)
         .range(from, from + PAGE - 1);
@@ -31,15 +40,21 @@ export default function UnclassifiedReview() {
       all = all.concat(data || []);
       if (!data || data.length < PAGE) break;
     }
-    setRows(all);
+    setRows(all.filter(r => !NON_FOOD_NOISE_RE.test(r.product_name)));
     setLoading(false);
   }
 
   const grouped = {};
   for (const r of rows) {
-    grouped[r.product_name] ??= { product_name: r.product_name, category: r.category, channels: new Set(), count: 0 };
-    grouped[r.product_name].channels.add(r.channel);
-    grouped[r.product_name].count += 1;
+    grouped[r.product_name] ??= {
+      product_name: r.product_name, category: r.category,
+      channels: new Set(), count: 0, first: r.broadcast_date, last: r.broadcast_date,
+    };
+    const e = grouped[r.product_name];
+    e.channels.add(r.channel);
+    e.count += 1;
+    if (r.broadcast_date < e.first) e.first = r.broadcast_date;
+    if (r.broadcast_date > e.last) e.last = r.broadcast_date;
   }
   const items = Object.values(grouped).sort((a, b) => b.count - a.count);
 
@@ -49,7 +64,7 @@ export default function UnclassifiedReview() {
       <p style={{ fontSize: 12, color: '#8aaa8a', marginTop: -8, marginBottom: 12 }}>
         스크래핑 단계에서 이미 "식품/가공식품/신선식품"으로 태깅됐지만, 과일·건기식·식품 분류기(lib/foodClassifier.js)가
         아직 품목을 못 알아본 상품들입니다. 새 품목이 계속 나오면 여기 쌓이니, 주기적으로 확인해서 분류기에 키워드를
-        추가해주세요. (완전히 무관한 상품이면 그냥 두셔도 됩니다 — 자동으로 사라지지 않고 계속 쌓이는 목록입니다.)
+        추가해주세요. (염색제·의료기기·가전처럼 애초에 식품이 아닌 건 미리 걸러서 안 보이게 했습니다.)
       </p>
       {loading ? <p>불러오는 중...</p> : items.length === 0 ? (
         <p style={{ color: '#8aaa8a' }}>미분류 후보가 없습니다.</p>
@@ -61,6 +76,7 @@ export default function UnclassifiedReview() {
               <th style={{ padding: '4px 6px' }}>원래 카테고리</th>
               <th style={{ padding: '4px 6px', width: 60, textAlign: 'right' }}>채널수</th>
               <th style={{ padding: '4px 6px', width: 60, textAlign: 'right' }}>건수</th>
+              <th style={{ padding: '4px 6px', width: 100, textAlign: 'right' }}>기간</th>
             </tr>
           </thead>
           <tbody>
@@ -70,6 +86,9 @@ export default function UnclassifiedReview() {
                 <td style={{ padding: '4px 6px', color: '#8aaa8a' }}>{item.category}</td>
                 <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{item.channels.size}</td>
                 <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{item.count}</td>
+                <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a', whiteSpace: 'nowrap' }}>
+                  {item.first === item.last ? mdKo(item.first) : `${mdKo(item.first)}~${mdKo(item.last)}`}
+                </td>
               </tr>
             ))}
           </tbody>
