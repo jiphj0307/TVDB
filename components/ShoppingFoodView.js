@@ -10,25 +10,39 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function daysBetween(a, b) {
+  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+}
+
+// "신규" 뱃지는 이 기능을 배포한 날짜(ANCHOR_DATE) 이후에 처음 등장한 탭에만 붙인다.
+// 그냥 "가장 오래된 방송일이 오늘 기준 7일 이내"로만 판정하면, 지금처럼 데이터 자체가
+// 아직 10일치밖에 없는 초창기엔 원래 있던 품목까지 전부 "신규"로 잘못 뜬다 — 배포 시점을
+// 기준으로 고정해야 그 이후 "진짜로 새로 나온" 품목만 잡힌다.
+const ANCHOR_DATE = '2026-07-22';
+
 // 탭 버튼에 "몇 개 채널 · 몇 회 방송"을 적어주기 위해, 중첩된 트리(과일은 province->city->rows,
 // 건기식·식품은 __flat__->rows)를 상관없이 재귀로 훑어서 채널수/총 방송횟수를 세고,
-// 오늘 방송된 게 하나라도 있는지도 같이 체크한다(탭 자체에 "오늘" 뱃지를 붙이기 위함).
+// 오늘 방송된 게 하나라도 있는지, 이 탭이 처음 등장한 날짜(=가장 오래된 broadcast_date)도 같이
+// 체크한다 — "오늘" 뱃지와 "신규"(ANCHOR_DATE 이후 처음 등장해서 7일 이내) 뱃지를 탭에 붙이기 위함.
 function collectStats(node, today) {
   const channels = new Set();
   let count = 0;
   let hasToday = false;
+  let first = null;
   (function walk(n) {
     if (Array.isArray(n)) {
       count += n.length;
       for (const r of n) {
         channels.add(r.channel);
         if (r.broadcast_date === today) hasToday = true;
+        if (first === null || r.broadcast_date < first) first = r.broadcast_date;
       }
       return;
     }
     for (const k of Object.keys(n)) walk(n[k]);
   })(node);
-  return { channelCount: channels.size, count, hasToday };
+  const isNew = first !== null && first >= ANCHOR_DATE && daysBetween(first, today) <= 7;
+  return { channelCount: channels.size, count, hasToday, isNew };
 }
 
 function TabButton({ label, stats, active, onClick }) {
@@ -43,6 +57,12 @@ function TabButton({ label, stats, active, onClick }) {
           position: 'absolute', top: -8, right: -6, fontSize: 9.5, fontWeight: 700, color: '#fff',
           background: '#e63946', borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap',
         }}>오늘</span>
+      )}
+      {stats.isNew && (
+        <span style={{
+          position: 'absolute', top: -8, left: -6, fontSize: 9.5, fontWeight: 700, color: '#fff',
+          background: '#2563eb', borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap',
+        }}>신규</span>
       )}
       {label}
       <div style={{ fontSize: 10.5, opacity: 0.75 }}>{stats.channelCount}개 채널 · {stats.count}회</div>
