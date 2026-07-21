@@ -30,14 +30,27 @@ export default function ShoppingPanel({ showToast }) {
   useEffect(() => { loadChannels(); }, []);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
 
-  // 채널/날짜 선택 -> URL 쿼리스트링 동기화 (새로고침해도 유지됨)
+  // 새로고침해도 어느 탭(수집현황/채널별편성표/미분류검토)에 있었는지 유지
   useEffect(() => {
-    if (!router.isReady || !activeChannel) return;
-    const query = { tab: 'shopping', channel: activeChannel };
-    if (selectedDate) query.date = selectedDate;
+    if (!router.isReady) return;
+    const q = router.query;
+    if (q.tab === 'shopping' && ['status', 'channel', 'unclassified'].includes(q.view)) {
+      setViewMode(q.view);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady]);
+
+  // 탭/채널/날짜 선택 -> URL 쿼리스트링 동기화 (새로고침해도 유지됨)
+  useEffect(() => {
+    if (!router.isReady) return;
+    const query = { tab: 'shopping', view: viewMode };
+    if (viewMode === 'channel' && activeChannel) {
+      query.channel = activeChannel;
+      if (selectedDate) query.date = selectedDate;
+    }
     router.replace({ pathname: '/admin', query }, undefined, { shallow: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChannel, selectedDate]);
+  }, [viewMode, activeChannel, selectedDate]);
 
   async function loadChannels() {
     // Supabase REST가 한 번에 내려주는 행 수를 서버 설정상 잘라버리기 때문에(보통 1000행),
