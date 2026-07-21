@@ -42,8 +42,18 @@ export default function BroadcastPanel({ showToast }) {
   }, [activeChannel, selectedDate]);
 
   async function loadChannels() {
-    const { data } = await supabase.from('tvdb_program').select('channel').limit(5000);
-    const uniq = Array.from(new Set((data || []).map(r => r.channel).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
+    // Supabase REST가 한 번에 내려주는 행 수를 서버 설정상 잘라버리기 때문에(보통 1000행),
+    // 전체 채널을 다 훑으려면 페이지네이션으로 끝까지 가져와야 함 (안 그러면 데이터가 많아질수록
+    // 뒤쪽에 있는 채널이 목록에서 통째로 빠져버림).
+    const PAGE = 1000;
+    let allRows = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('tvdb_program').select('channel').range(from, from + PAGE - 1);
+      if (error) break;
+      allRows = allRows.concat(data || []);
+      if (!data || data.length < PAGE) break;
+    }
+    const uniq = Array.from(new Set(allRows.map(r => r.channel).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
     setChannels(uniq);
     if (uniq.length > 0) {
       const q = router.query;
