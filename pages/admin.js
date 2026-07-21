@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import AdminSidebar from '../components/admin/AdminSidebar';
 import ProgramInfoPanel from '../components/admin/ProgramInfoPanel';
+import CoupangPanel from '../components/admin/CoupangPanel';
+import AdsensePanel from '../components/admin/AdsensePanel';
 import { S, Toast } from '../components/admin/AdminUI';
 
 function LoginScreen({ onLogin }) {
@@ -67,6 +69,8 @@ export default function Admin() {
         <main style={{ flex: 1, minWidth: 0, padding: '32px 28px 60px' }}>
           <div style={{ maxWidth: 980, margin: '0 auto' }}>
             {activeTab === 'program_info' && <ProgramInfoPanel showToast={showToast} />}
+            {activeTab === 'coupang' && <CoupangPanel />}
+            {activeTab === 'adsense' && <AdsensePanel showToast={showToast} />}
           </div>
         </main>
       </div>

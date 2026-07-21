@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
+import { AdSlot } from '../components/AdSlot';
+import { useAdSlot } from '../lib/AdSlotsContext';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -17,6 +19,9 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [channelFilter, setChannelFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+
+  const topSlot = useAdSlot('home_top');
+  const bottomSlot = useAdSlot('home_bottom');
 
   // URL 쿼리스트링 -> 상태로 최초 1회 복원 (새로고침해도 유지됨)
   useEffect(() => {
@@ -74,6 +79,10 @@ export default function Home() {
     <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 1100, margin: '0 auto', padding: '24px 16px', color: '#222' }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>TVDB</h1>
       <p style={{ color: '#666', marginTop: 0, marginBottom: 20 }}>홈쇼핑·방송 편성 데이터 아카이브</p>
+
+      <div style={{ marginBottom: 20 }}>
+        <AdSlot slot="home_top" label="광고" slotData={topSlot} />
+      </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
         <input
@@ -137,6 +146,14 @@ export default function Home() {
           </tbody>
         </table>
       )}
+
+      <div style={{ marginTop: 24 }}>
+        <AdSlot slot="home_bottom" label="광고" slotData={bottomSlot} />
+      </div>
+
+      <div style={{ marginTop: 32, paddingTop: 16, borderTop: '1px solid #eee', fontSize: 13 }}>
+        <a href="/admin" style={{ color: '#888', textDecoration: 'none' }}>admin</a>
+      </div>
     </div>
   );
 }

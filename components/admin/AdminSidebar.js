@@ -1,5 +1,7 @@
 const NAV = [
   { id: 'program_info', label: '프로그램 정보 관리', icon: '📺' },
+  { id: 'coupang', label: '쿠팡 관리', icon: '🛒' },
+  { id: 'adsense', label: '광고 관리', icon: '📢' },
 ]
 
 function NavItem({ item, active, onClick }) {
