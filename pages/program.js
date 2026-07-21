@@ -40,11 +40,17 @@ export default function Program() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [channelFilter, setChannelFilter] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const topSlot = useAdSlot('home_top');
   const bottomSlot = useAdSlot('home_bottom');
   const leftSlot = useAdSlot('home_left');
   const rightSlot = useAdSlot('home_right');
+
+  // 관리자 로그인 여부(admin.js에서 로그인 성공 시 sessionStorage.tvdb_admin='1'로 저장함)
+  useEffect(() => {
+    setIsAdmin(sessionStorage.getItem('tvdb_admin') === '1');
+  }, []);
 
   // URL 쿼리스트링 -> 상태로 최초 1회 복원 (새로고침해도 유지됨)
   useEffect(() => {
@@ -85,6 +91,21 @@ export default function Program() {
     load();
     return () => { cancelled = true; };
   }, [routerReady, date]);
+
+  // 관리자 체크박스 토글: DB 업데이트 + 화면 즉시 반영
+  async function toggleTarget(row) {
+    const next = !row.is_life_health_target;
+    setRows(rs => rs.map(r => r.id === row.id ? { ...r, is_life_health_target: next } : r));
+    const { error } = await supabase
+      .from('tvdb_program')
+      .update({ is_life_health_target: next })
+      .eq('id', row.id);
+    if (error) {
+      // 실패하면 원상복구
+      setRows(rs => rs.map(r => r.id === row.id ? { ...r, is_life_health_target: !next } : r));
+      alert('저장 실패: ' + error.message);
+    }
+  }
 
   const dateList = recentDates(7);
 
@@ -135,6 +156,11 @@ export default function Program() {
           {channels.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <span style={{ color: '#888', fontSize: 13 }}>{filtered.length}건</span>
+        {isAdmin && (
+          <span style={{ fontSize: 12, color: '#b45309', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '3px 8px' }}>
+            🔓 관리자 모드 — 체크박스로 색칠 직접 지정 가능
+          </span>
+        )}
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666', marginLeft: 'auto' }}>
           <span style={{ width: 12, height: 12, borderRadius: 3, background: '#fff3cd', border: '1px solid #f0d68a', display: 'inline-block' }} />
           생활·건강 (어르신 시청 위주)
@@ -148,6 +174,7 @@ export default function Program() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #222' }}>
+              {isAdmin && <th style={{ padding: '8px 6px', width: 30 }}></th>}
               <th style={{ padding: '8px 6px' }}>시간</th>
               <th style={{ padding: '8px 6px' }}>채널</th>
               <th style={{ padding: '8px 6px' }}>프로그램명</th>
@@ -157,6 +184,11 @@ export default function Program() {
           <tbody>
             {filtered.map(r => (
               <tr key={r.id} style={{ borderBottom: '1px solid #eee', background: r.is_life_health_target ? '#fff3cd' : undefined }}>
+                {isAdmin && (
+                  <td style={{ padding: '6px' }}>
+                    <input type="checkbox" checked={!!r.is_life_health_target} onChange={() => toggleTarget(r)} style={{ cursor: 'pointer' }} />
+                  </td>
+                )}
                 <td style={{ padding: '6px' }}>{r.time_start}</td>
                 <td style={{ padding: '6px' }}>{r.channel}</td>
                 <td style={{ padding: '6px' }}>{r.program_name}</td>
@@ -164,7 +196,7 @@ export default function Program() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={4} style={{ padding: 16, color: '#888' }}>이 날짜엔 데이터가 없습니다.</td></tr>
+              <tr><td colSpan={isAdmin ? 5 : 4} style={{ padding: 16, color: '#888' }}>이 날짜엔 데이터가 없습니다.</td></tr>
             )}
           </tbody>
         </table>
