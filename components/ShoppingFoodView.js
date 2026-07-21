@@ -1,10 +1,81 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { classifyProduct, TOP_ORDER } from '../lib/foodClassifier';
 
 function mdKo(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   return `${d.getMonth() + 1}.${d.getDate()}`;
+}
+
+function ProductTable({ rows }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+      <tbody>
+        {rows.map(row => (
+          <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
+            <td style={{ padding: '3px 6px', width: 44, color: '#888', whiteSpace: 'nowrap' }}>{mdKo(row.broadcast_date)}</td>
+            <td style={{ padding: '3px 6px', width: 70, color: '#888', whiteSpace: 'nowrap' }}>{row.channel}</td>
+            <td style={{ padding: '3px 6px' }}>{row.product_name}</td>
+            <td style={{ padding: '3px 6px', width: 70, color: '#888', textAlign: 'right', whiteSpace: 'nowrap' }}>{row.price || ''}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// 과일 섹션: 하위 과일 종류를 ㄱㄴㄷ순 탭으로 전환하며 보여줌
+function FruitSection({ label, subMap }) {
+  const subKeys = useMemo(() => Object.keys(subMap).sort((a, b) => a.localeCompare(b, 'ko')), [subMap]);
+  const [active, setActive] = useState(subKeys[0] || '');
+  useEffect(() => {
+    if (!subKeys.includes(active)) setActive(subKeys[0] || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subKeys.join(',')]);
+
+  const buckets = subMap[active] || {};
+  const bucketKeys = Object.keys(buckets);
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <h2 style={{ fontSize: 18, borderBottom: '2px solid #222', paddingBottom: 6, marginBottom: 14 }}>{label}</h2>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+        {subKeys.map(sub => (
+          <button key={sub} onClick={() => setActive(sub)} style={{
+            padding: '6px 14px', border: '1px solid #ccc', borderRadius: 6,
+            background: active === sub ? '#222' : '#fff', color: active === sub ? '#fff' : '#222',
+            cursor: 'pointer', fontSize: 13,
+          }}>{sub}</button>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
+        {bucketKeys.map(bk => (
+          <div key={bk} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
+            <div style={{ fontWeight: 700, fontSize: 12, color: '#444', marginBottom: 6 }}>{bk}</div>
+            <ProductTable rows={buckets[bk]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 건기식 · 식품 섹션: 종류별로 쭉 나열
+function FlatSection({ label, subMap }) {
+  const subKeys = Object.keys(subMap);
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <h2 style={{ fontSize: 18, borderBottom: '2px solid #222', paddingBottom: 6, marginBottom: 14 }}>{label}</h2>
+      {subKeys.map(sub => (
+        <div key={sub} style={{ marginBottom: 18 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{sub}</div>
+          <div style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
+            <ProductTable rows={subMap[sub]['__flat__'] || []} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function ShoppingFoodView() {
@@ -66,45 +137,9 @@ export default function ShoppingFoodView() {
       {TOP_ORDER.map(({ key, label }) => {
         const subMap = tree[key];
         if (!subMap) return null;
-        const subKeys = Object.keys(subMap);
-        return (
-          <div key={key} style={{ marginBottom: 28 }}>
-            <h2 style={{ fontSize: 18, borderBottom: '2px solid #222', paddingBottom: 6, marginBottom: 14 }}>{label}</h2>
-            {subKeys.map(sub => {
-              const buckets = subMap[sub];
-              const isFruit = key === 'fruit';
-              const bucketKeys = Object.keys(buckets);
-              return (
-                <div key={sub} style={{ marginBottom: 18 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{sub}</div>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: isFruit ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr',
-                    gap: 10,
-                  }}>
-                    {bucketKeys.map(bk => (
-                      <div key={bk} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
-                        {isFruit && <div style={{ fontWeight: 700, fontSize: 12, color: '#444', marginBottom: 6 }}>{bk}</div>}
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                          <tbody>
-                            {buckets[bk].map(row => (
-                              <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
-                                <td style={{ padding: '3px 6px', width: 44, color: '#888', whiteSpace: 'nowrap' }}>{mdKo(row.broadcast_date)}</td>
-                                <td style={{ padding: '3px 6px', width: 70, color: '#888', whiteSpace: 'nowrap' }}>{row.channel}</td>
-                                <td style={{ padding: '3px 6px' }}>{row.product_name}</td>
-                                <td style={{ padding: '3px 6px', width: 70, color: '#888', textAlign: 'right', whiteSpace: 'nowrap' }}>{row.price || ''}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        );
+        return key === 'fruit'
+          ? <FruitSection key={key} label={label} subMap={subMap} />
+          : <FlatSection key={key} label={label} subMap={subMap} />;
       })}
       {Object.keys(tree).length === 0 && <p style={{ color: '#888' }}>분류된 상품이 없습니다.</p>}
     </div>
