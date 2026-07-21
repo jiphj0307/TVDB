@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
 
 function todayStr() {
@@ -6,6 +7,9 @@ function todayStr() {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const routerReady = router.isReady;
+
   const [date, setDate] = useState(todayStr());
   const [tab, setTab] = useState('shopping'); // 'shopping' | 'program'
   const [rows, setRows] = useState([]);
@@ -14,7 +18,29 @@ export default function Home() {
   const [channelFilter, setChannelFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
+  // URL 쿼리스트링 -> 상태로 최초 1회 복원 (새로고침해도 유지됨)
   useEffect(() => {
+    if (!routerReady) return;
+    const q = router.query;
+    if (q.date) setDate(q.date);
+    if (q.tab === 'shopping' || q.tab === 'program') setTab(q.tab);
+    if (q.channel) setChannelFilter(q.channel);
+    if (q.category) setCategoryFilter(q.category);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routerReady]);
+
+  // 상태 -> URL 쿼리스트링으로 동기화 (뒤로가기/새로고침 대비, 히스토리는 안 쌓음)
+  useEffect(() => {
+    if (!routerReady) return;
+    const query = { date, tab };
+    if (channelFilter) query.channel = channelFilter;
+    if (categoryFilter) query.category = categoryFilter;
+    router.replace({ pathname: '/', query }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routerReady, date, tab, channelFilter, categoryFilter]);
+
+  useEffect(() => {
+    if (!routerReady) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -34,7 +60,7 @@ export default function Home() {
     }
     load();
     return () => { cancelled = true; };
-  }, [date, tab]);
+  }, [routerReady, date, tab]);
 
   const channels = Array.from(new Set(rows.map(r => r.channel))).sort();
   const categories = Array.from(new Set(rows.map(r => r.category).filter(Boolean))).sort();
@@ -58,11 +84,11 @@ export default function Home() {
         />
         <div style={{ display: 'flex', border: '1px solid #ccc', borderRadius: 6, overflow: 'hidden' }}>
           <button
-            onClick={() => setTab('shopping')}
+            onClick={() => { setTab('shopping'); setChannelFilter(''); setCategoryFilter(''); }}
             style={{ padding: '6px 14px', border: 'none', background: tab === 'shopping' ? '#222' : '#fff', color: tab === 'shopping' ? '#fff' : '#222', cursor: 'pointer' }}
           >홈쇼핑</button>
           <button
-            onClick={() => setTab('program')}
+            onClick={() => { setTab('program'); setChannelFilter(''); setCategoryFilter(''); }}
             style={{ padding: '6px 14px', border: 'none', background: tab === 'program' ? '#222' : '#fff', color: tab === 'program' ? '#fff' : '#222', cursor: 'pointer' }}
           >일반방송</button>
         </div>
