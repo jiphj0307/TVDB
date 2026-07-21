@@ -132,7 +132,7 @@ export default function ShoppingPanel({ showToast }) {
       </div>
 
       {viewMode === 'status' && <CollectionStatus />}
-      {viewMode === 'unclassified' && <UnclassifiedReview />}
+      {viewMode === 'unclassified' && <UnclassifiedReview showToast={showToast} />}
 
       {viewMode === 'channel' && (
         <>
