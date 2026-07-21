@@ -11,28 +11,39 @@ function todayStr() {
 }
 
 // 탭 버튼에 "몇 개 채널 · 몇 회 방송"을 적어주기 위해, 중첩된 트리(과일은 province->city->rows,
-// 건기식·식품은 __flat__->rows)를 상관없이 재귀로 훑어서 채널수/총 방송횟수를 센다.
-function collectStats(node) {
+// 건기식·식품은 __flat__->rows)를 상관없이 재귀로 훑어서 채널수/총 방송횟수를 세고,
+// 오늘 방송된 게 하나라도 있는지도 같이 체크한다(탭 자체에 "오늘" 뱃지를 붙이기 위함).
+function collectStats(node, today) {
   const channels = new Set();
   let count = 0;
+  let hasToday = false;
   (function walk(n) {
     if (Array.isArray(n)) {
       count += n.length;
-      for (const r of n) channels.add(r.channel);
+      for (const r of n) {
+        channels.add(r.channel);
+        if (r.broadcast_date === today) hasToday = true;
+      }
       return;
     }
     for (const k of Object.keys(n)) walk(n[k]);
   })(node);
-  return { channelCount: channels.size, count };
+  return { channelCount: channels.size, count, hasToday };
 }
 
 function TabButton({ label, stats, active, onClick }) {
   return (
     <button onClick={onClick} style={{
-      padding: '6px 14px', border: '1px solid #ccc', borderRadius: 6,
+      position: 'relative', padding: '6px 14px', border: '1px solid #ccc', borderRadius: 6,
       background: active ? '#222' : '#fff', color: active ? '#fff' : '#222',
       cursor: 'pointer', fontSize: 13, textAlign: 'center', lineHeight: 1.5,
     }}>
+      {stats.hasToday && (
+        <span style={{
+          position: 'absolute', top: -8, right: -6, fontSize: 9.5, fontWeight: 700, color: '#fff',
+          background: '#e63946', borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap',
+        }}>오늘</span>
+      )}
       {label}
       <div style={{ fontSize: 10.5, opacity: 0.75 }}>{stats.channelCount}개 채널 · {stats.count}회</div>
     </button>
@@ -150,8 +161,9 @@ function AggregatedTable({ rows }) {
 // 시/군(city)을 아는 경우엔 그 카드 안에 소제목으로만 구분한다 (예: "경북" 카드 하나 안에 의성/영천/상주 소제목).
 function FruitSection({ label, subMap }) {
   const subStats = useMemo(() => {
+    const today = todayStr();
     const m = {};
-    for (const sub of Object.keys(subMap)) m[sub] = collectStats(subMap[sub]);
+    for (const sub of Object.keys(subMap)) m[sub] = collectStats(subMap[sub], today);
     return m;
   }, [subMap]);
   // 방송횟수(=관심·판매량 신호) 많은 순으로 탭 정렬 — 가나다순 대신 동적으로 매겨진다
@@ -205,8 +217,9 @@ function FruitSection({ label, subMap }) {
 // 건기식 · 식품 섹션: 과일과 동일하게 하위 종류를 방송횟수 많은 순 탭으로 전환
 function FlatSection({ label, subMap }) {
   const subStats = useMemo(() => {
+    const today = todayStr();
     const m = {};
-    for (const sub of Object.keys(subMap)) m[sub] = collectStats(subMap[sub]);
+    for (const sub of Object.keys(subMap)) m[sub] = collectStats(subMap[sub], today);
     return m;
   }, [subMap]);
   // 방송횟수(=관심·판매량 신호) 많은 순으로 탭 정렬 — 가나다순 대신 동적으로 매겨진다
