@@ -19,13 +19,13 @@ function toDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
-// 최근 N일(오늘 포함) 날짜 목록. 날짜 탭 UI에 씀.
-function recentDates(days = 7) {
+// 오늘 기준 weekOffset주 전의 7일 목록. weekOffset=0이면 오늘 포함 최근 7일.
+function weekDates(weekOffset = 0, days = 7) {
   const arr = [];
   const today = new Date();
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
-    d.setDate(d.getDate() - i);
+    d.setDate(d.getDate() - i - weekOffset * days);
     arr.push(d);
   }
   return arr;
@@ -36,6 +36,7 @@ export default function Program() {
   const routerReady = router.isReady;
 
   const [date, setDate] = useState(todayStr());
+  const [weekOffset, setWeekOffset] = useState(0);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -107,7 +108,23 @@ export default function Program() {
     }
   }
 
-  const dateList = recentDates(7);
+  function pickDate(ds) {
+    setDate(ds);
+  }
+
+  function goPrevWeek() {
+    const next = weekOffset + 1;
+    setWeekOffset(next);
+    setDate(toDateStr(weekDates(next)[0])); // 이동한 주의 첫 날짜로 이동
+  }
+
+  function goNextWeek() {
+    const next = Math.max(0, weekOffset - 1);
+    setWeekOffset(next);
+    setDate(toDateStr(weekDates(next)[next === 0 ? 6 : 0]));
+  }
+
+  const dateList = weekDates(weekOffset);
 
   const channels = Array.from(new Set(rows.map(r => r.channel))).sort();
 
@@ -129,25 +146,36 @@ export default function Program() {
         <AdSlot slot="home_top" label="광고" slotData={topSlot} />
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {dateList.map(d => {
-          const ds = toDateStr(d);
-          const active = ds === date;
-          return (
-            <button
-              key={ds}
-              onClick={() => setDate(ds)}
-              style={{
-                flex: '1 0 64px', padding: '8px 6px', border: '1px solid #ccc', borderRadius: 6,
-                background: active ? '#222' : '#fff', color: active ? '#fff' : '#222',
-                cursor: 'pointer', textAlign: 'center', lineHeight: 1.4,
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{d.getMonth() + 1}.{d.getDate()}</div>
-              <div style={{ fontSize: 11, opacity: 0.75 }}>{WEEKDAY_KR[d.getDay()]}</div>
-            </button>
-          );
-        })}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+        <button onClick={goPrevWeek} title="이전 7일" style={{
+          flexShrink: 0, padding: '8px 10px', border: '1px solid #ccc', borderRadius: 6,
+          background: '#fff', color: '#222', cursor: 'pointer',
+        }}>◀</button>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: 1 }}>
+          {dateList.map(d => {
+            const ds = toDateStr(d);
+            const active = ds === date;
+            return (
+              <button
+                key={ds}
+                onClick={() => pickDate(ds)}
+                style={{
+                  flex: '1 0 64px', padding: '8px 6px', border: '1px solid #ccc', borderRadius: 6,
+                  background: active ? '#222' : '#fff', color: active ? '#fff' : '#222',
+                  cursor: 'pointer', textAlign: 'center', lineHeight: 1.4,
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{d.getMonth() + 1}.{d.getDate()}</div>
+                <div style={{ fontSize: 11, opacity: 0.75 }}>{WEEKDAY_KR[d.getDay()]}</div>
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={goNextWeek} disabled={weekOffset === 0} title="다음 7일" style={{
+          flexShrink: 0, padding: '8px 10px', border: '1px solid #ccc', borderRadius: 6,
+          background: '#fff', color: weekOffset === 0 ? '#ccc' : '#222',
+          cursor: weekOffset === 0 ? 'default' : 'pointer',
+        }}>▶</button>
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
