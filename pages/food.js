@@ -3,8 +3,16 @@ import { AdSlot } from '../components/AdSlot';
 import { useAdSlot } from '../lib/AdSlotsContext';
 import { Nav } from '../components/Nav';
 import ShoppingFoodView from '../components/ShoppingFoodView';
+import { loadFoodTree } from '../lib/loadFoodTree';
 
-export default function FoodPage() {
+// tvdb_shopping 전체를 훑어서 분류하는 건 무거운 작업이라 방문할 때마다 브라우저에서
+// 하지 않고, 여기서 서버가 미리 만들어둔 걸 정적으로 내려준다(ISR, 10분마다 재생성).
+export async function getStaticProps() {
+  const tree = await loadFoodTree();
+  return { props: { tree }, revalidate: 600 };
+}
+
+export default function FoodPage({ tree }) {
   const topSlot = useAdSlot('food_top');
   const bottomSlot = useAdSlot('food_bottom');
   const leftSlot = useAdSlot('food_left');
@@ -28,7 +36,7 @@ export default function FoodPage() {
             <AdSlot slot="food_top" label="광고" slotData={topSlot} />
           </div>
 
-          <ShoppingFoodView />
+          <ShoppingFoodView tree={tree} />
 
           <div style={{ marginTop: 24 }}>
             <AdSlot slot="food_bottom" label="광고" slotData={bottomSlot} />
