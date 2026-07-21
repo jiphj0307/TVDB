@@ -6,6 +6,10 @@ function mdKo(dateStr) {
   return `${d.getMonth() + 1}.${d.getDate()}`;
 }
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 // 탭 버튼에 "몇 개 채널 · 몇 회 방송"을 적어주기 위해, 중첩된 트리(과일은 province->city->rows,
 // 건기식·식품은 __flat__->rows)를 상관없이 재귀로 훑어서 채널수/총 방송횟수를 센다.
 function collectStats(node) {
@@ -106,6 +110,7 @@ function DetailModal({ item, onClose }) {
 function AggregatedTable({ rows }) {
   const items = useMemo(() => aggregateByProduct(rows), [rows]);
   const [selected, setSelected] = useState(null);
+  const today = todayStr();
   return (
     <>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -120,7 +125,15 @@ function AggregatedTable({ rows }) {
         <tbody>
           {items.map(item => (
             <tr key={item.product_name} onClick={() => setSelected(item)} style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}>
-              <td style={{ padding: '3px 6px' }}>{item.product_name}</td>
+              <td style={{ padding: '3px 6px' }}>
+                {item.product_name}
+                {item.last === today && (
+                  <span style={{
+                    marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: '#e63946',
+                    borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle',
+                  }}>오늘</span>
+                )}
+              </td>
               <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.channels.size}</td>
               <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.count}</td>
               <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888', whiteSpace: 'nowrap' }}>{mdKo(item.last)}</td>
