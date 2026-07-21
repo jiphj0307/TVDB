@@ -7,6 +7,18 @@ function mdKo(dateStr) {
   return `${d.getMonth() + 1}.${d.getDate()}`;
 }
 
+function sortLeaves(node) {
+  if (Array.isArray(node)) {
+    node.sort((a, b) => {
+      const da = a.broadcast_date + (a.time_start || '');
+      const db = b.broadcast_date + (b.time_start || '');
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
+    return;
+  }
+  for (const key of Object.keys(node)) sortLeaves(node[key]);
+}
+
 function ProductTable({ rows }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -24,7 +36,8 @@ function ProductTable({ rows }) {
   );
 }
 
-// 과일 섹션: 하위 과일 종류를 ㄱㄴㄷ순 탭으로 전환하며 보여줌
+// 과일 섹션: 하위 과일 종류를 ㄱㄴㄷ순 탭으로 전환, 그 안에서 도(province) 단위로 한 카드씩 묶고
+// 시/군(city)을 아는 경우엔 그 카드 안에 소제목으로만 구분한다 (예: "경북" 카드 하나 안에 의성/영천/상주 소제목).
 function FruitSection({ label, subMap }) {
   const subKeys = useMemo(() => Object.keys(subMap).sort((a, b) => a.localeCompare(b, 'ko')), [subMap]);
   const [active, setActive] = useState(subKeys[0] || '');
@@ -33,8 +46,8 @@ function FruitSection({ label, subMap }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subKeys.join(',')]);
 
-  const buckets = subMap[active] || {};
-  const bucketKeys = Object.keys(buckets);
+  const provinces = subMap[active] || {};
+  const provinceKeys = Object.keys(provinces);
 
   return (
     <div style={{ marginBottom: 28 }}>
@@ -49,12 +62,26 @@ function FruitSection({ label, subMap }) {
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
-        {bucketKeys.map(bk => (
-          <div key={bk} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
-            <div style={{ fontWeight: 700, fontSize: 12, color: '#444', marginBottom: 6 }}>{bk}</div>
-            <ProductTable rows={buckets[bk]} />
-          </div>
-        ))}
+        {provinceKeys.map(province => {
+          const cities = provinces[province];
+          const cityKeys = Object.keys(cities);
+          const onlyFlat = cityKeys.length === 1 && cityKeys[0] === '__flat__';
+          return (
+            <div key={province} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#222', marginBottom: 8 }}>{province}</div>
+              {onlyFlat ? (
+                <ProductTable rows={cities.__flat__} />
+              ) : (
+                cityKeys.map(city => (
+                  <div key={city} style={{ marginBottom: 8 }}>
+                    {city !== '__flat__' && <div style={{ fontSize: 11.5, color: '#666', marginBottom: 4 }}>{city}</div>}
+                    <ProductTable rows={cities[city]} />
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -70,7 +97,7 @@ function FlatSection({ label, subMap }) {
         <div key={sub} style={{ marginBottom: 18 }}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{sub}</div>
           <div style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
-            <ProductTable rows={subMap[sub]['__flat__'] || []} />
+            <ProductTable rows={subMap[sub].__flat__ || []} />
           </div>
         </div>
       ))}
@@ -105,34 +132,31 @@ export default function ShoppingFoodView() {
 
   if (loading) return <p>불러오는 중...</p>;
 
-  // top(과일/건기식/식품) -> sub(복숭아/유산균/수산물 등) -> [region for 과일] -> rows[]
+  // 과일: top -> sub(복숭아 등) -> province(경북 등) -> city(의성 등, 없으면 '__flat__') -> rows[]
+  // 건기식·식품: top -> sub(유산균 등) -> '__flat__' -> rows[]
   const tree = {};
   for (const row of rows) {
     const c = classifyProduct(row.product_name);
     if (!c) continue;
     tree[c.top] ??= {};
     tree[c.top][c.sub] ??= {};
-    const bucketKey = c.top === 'fruit' ? c.region : '__flat__';
-    tree[c.top][c.sub][bucketKey] ??= [];
-    tree[c.top][c.sub][bucketKey].push(row);
-  }
-  for (const top of Object.keys(tree)) {
-    for (const sub of Object.keys(tree[top])) {
-      for (const bucket of Object.keys(tree[top][sub])) {
-        tree[top][sub][bucket].sort((a, b) => {
-          const da = a.broadcast_date + (a.time_start || '');
-          const db = b.broadcast_date + (b.time_start || '');
-          return da < db ? -1 : da > db ? 1 : 0;
-        });
-      }
+    if (c.top === 'fruit') {
+      tree[c.top][c.sub][c.province] ??= {};
+      const cityKey = c.city || '__flat__';
+      tree[c.top][c.sub][c.province][cityKey] ??= [];
+      tree[c.top][c.sub][c.province][cityKey].push(row);
+    } else {
+      tree[c.top][c.sub]['__flat__'] ??= [];
+      tree[c.top][c.sub]['__flat__'].push(row);
     }
   }
+  sortLeaves(tree);
 
   return (
     <div>
       <p style={{ color: '#666', fontSize: 13, marginTop: 0, marginBottom: 20 }}>
         최근 수집된 전체 기간의 홈쇼핑 상품 중 과일 · 건강기능식품 · 식품만 골라 종류별로 묶어서 보여줍니다.
-        같은 과일이라도 산지가 다르면 따로 표시하고, 각 묶음 안에서는 방송 날짜순으로 정렬했습니다.
+        과일은 도 단위로 묶고(같은 경북이어도 시/군을 알면 카드 안에 소제목으로 구분), 각 묶음 안에서는 방송 날짜순으로 정렬했습니다.
       </p>
       {TOP_ORDER.map(({ key, label }) => {
         const subMap = tree[key];
