@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
+import UnclassifiedReview from './UnclassifiedReview';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 function dowKo(dateStr) {
@@ -23,6 +24,7 @@ export default function ShoppingPanel({ showToast }) {
   const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('');
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState('channel'); // 'channel' | 'unclassified'
 
   useEffect(() => { loadChannels(); }, []);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
@@ -107,74 +109,95 @@ export default function ShoppingPanel({ showToast }) {
     <div>
       <div style={S.cardTitle}>🛍️ 홈쇼핑 정보 관리</div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
-        {channels.map(ch => (
-          <button key={ch} onClick={() => { setActiveChannel(ch); setSelectedDate(''); }} style={{
-            padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
-            background: activeChannel === ch ? '#16a34a' : '#fff',
-            color: activeChannel === ch ? '#fff' : '#4b6e4b',
-            fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
-          }}>{ch}</button>
-        ))}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        <button onClick={() => setViewMode('channel')} style={{
+          padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
+          background: viewMode === 'channel' ? '#16a34a' : '#fff',
+          color: viewMode === 'channel' ? '#fff' : '#4b6e4b',
+          fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+        }}>📅 채널별 편성표</button>
+        <button onClick={() => setViewMode('unclassified')} style={{
+          padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
+          background: viewMode === 'unclassified' ? '#16a34a' : '#fff',
+          color: viewMode === 'unclassified' ? '#fff' : '#4b6e4b',
+          fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+        }}>🔍 미분류 검토</button>
       </div>
 
-      {!activeChannel ? <p>채널 데이터가 없습니다.</p> : loading ? <p>불러오는 중...</p> : (
+      {viewMode === 'unclassified' && <UnclassifiedReview />}
+
+      {viewMode === 'channel' && (
         <>
-          <div style={S.card}>
-            <div style={S.cardTitle}>📅 {activeChannel} — 최근 {dates.length}일 편성</div>
-            {dates.length === 0 && <p style={{ color: '#8aaa8a' }}>편성 데이터가 없습니다. (매일 수집이 쌓이면 최대 7일치가 여기 보입니다)</p>}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {channels.map(ch => (
+              <button key={ch} onClick={() => { setActiveChannel(ch); setSelectedDate(''); }} style={{
+                padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
+                background: activeChannel === ch ? '#16a34a' : '#fff',
+                color: activeChannel === ch ? '#fff' : '#4b6e4b',
+                fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+              }}>{ch}</button>
+            ))}
+          </div>
 
-            {dates.length > 0 && (
-              <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-                {dates.map(d => {
-                  const active = d === selectedDate;
-                  return (
-                    <button key={d} onClick={() => setSelectedDate(d)} style={{
-                      flex: '1 0 60px', padding: '6px 4px', borderRadius: 8,
-                      border: `1.5px solid ${active ? '#16a34a' : '#d1e8d1'}`,
-                      background: active ? '#16a34a' : '#fff',
-                      color: active ? '#fff' : '#4b6e4b',
-                      cursor: 'pointer', textAlign: 'center', fontFamily: "'Outfit', sans-serif",
-                    }}>
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{mdKo(d)}</div>
-                      <div style={{ fontSize: 11, opacity: 0.85 }}>{dowKo(d)}</div>
-                    </button>
-                  );
-                })}
+          {!activeChannel ? <p>채널 데이터가 없습니다.</p> : loading ? <p>불러오는 중...</p> : (
+            <>
+              <div style={S.card}>
+                <div style={S.cardTitle}>📅 {activeChannel} — 최근 {dates.length}일 편성</div>
+                {dates.length === 0 && <p style={{ color: '#8aaa8a' }}>편성 데이터가 없습니다. (매일 수집이 쌓이면 최대 7일치가 여기 보입니다)</p>}
+
+                {dates.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
+                    {dates.map(d => {
+                      const active = d === selectedDate;
+                      return (
+                        <button key={d} onClick={() => setSelectedDate(d)} style={{
+                          flex: '1 0 60px', padding: '6px 4px', borderRadius: 8,
+                          border: `1.5px solid ${active ? '#16a34a' : '#d1e8d1'}`,
+                          background: active ? '#16a34a' : '#fff',
+                          color: active ? '#fff' : '#4b6e4b',
+                          cursor: 'pointer', textAlign: 'center', fontFamily: "'Outfit', sans-serif",
+                        }}>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{mdKo(d)}</div>
+                          <div style={{ fontSize: 11, opacity: 0.85 }}>{dowKo(d)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {selectedDate && (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <tbody>
+                      {rowsOfSelectedDate.map(row => (
+                        <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
+                          <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
+                          <td style={{ padding: '4px 6px' }}>{row.product_name}</td>
+                          <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.category}</td>
+                          <td style={{ padding: '4px 6px', color: '#8aaa8a', textAlign: 'right' }}>{row.price}</td>
+                        </tr>
+                      ))}
+                      {rowsOfSelectedDate.length === 0 && (
+                        <tr><td style={{ padding: 16, color: '#8aaa8a' }}>이 날짜엔 데이터가 없습니다.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
-            )}
 
-            {selectedDate && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <tbody>
-                  {rowsOfSelectedDate.map(row => (
-                    <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
-                      <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
-                      <td style={{ padding: '4px 6px' }}>{row.product_name}</td>
-                      <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.category}</td>
-                      <td style={{ padding: '4px 6px', color: '#8aaa8a', textAlign: 'right' }}>{row.price}</td>
-                    </tr>
-                  ))}
-                  {rowsOfSelectedDate.length === 0 && (
-                    <tr><td style={{ padding: 16, color: '#8aaa8a' }}>이 날짜엔 데이터가 없습니다.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div style={S.card}>
-            <div style={S.cardTitle}>📝 {activeChannel} 정보 출처 메모</div>
-            <p style={{ fontSize: 12, color: '#8aaa8a', marginTop: -8, marginBottom: 12 }}>
-              홈쇼핑은 상품명이 거의 매일 바뀌어서 상품 단위 등록 대신 채널 단위 메모만 관리합니다.
-            </p>
-            <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} style={S.textarea}
-              placeholder="예: 공식 앱 상품상세 페이지에서 확인 가능" />
-            <button type="button" onClick={saveNote} disabled={note === savedNote}
-              style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12, marginTop: 8, opacity: note === savedNote ? 0.5 : 1 }}>
-              메모 저장
-            </button>
-          </div>
+              <div style={S.card}>
+                <div style={S.cardTitle}>📝 {activeChannel} 정보 출처 메모</div>
+                <p style={{ fontSize: 12, color: '#8aaa8a', marginTop: -8, marginBottom: 12 }}>
+                  홈쇼핑은 상품명이 거의 매일 바뀌어서 상품 단위 등록 대신 채널 단위 메모만 관리합니다.
+                </p>
+                <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} style={S.textarea}
+                  placeholder="예: 공식 앱 상품상세 페이지에서 확인 가능" />
+                <button type="button" onClick={saveNote} disabled={note === savedNote}
+                  style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12, marginTop: 8, opacity: note === savedNote ? 0.5 : 1 }}>
+                  메모 저장
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
