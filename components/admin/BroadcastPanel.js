@@ -1,8 +1,10 @@
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
 import BroadcastCollectionStatus from './BroadcastCollectionStatus';
+import BroadcastChannelNotes from './BroadcastChannelNotes';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 function dowKo(dateStr) {
@@ -18,7 +20,7 @@ const emptyForm = { program_name: '', genre: '', description: '', source_url: ''
 
 export default function BroadcastPanel({ showToast }) {
   const router = useRouter();
-  const [viewMode, setViewMode] = useState('status'); // 'status' | 'channel'
+  const [viewMode, setViewMode] = useState('status'); // 'status' | 'channel' | 'notes'
   const [channels, setChannels] = useState([]);
   const [activeChannel, setActiveChannel] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
@@ -34,11 +36,11 @@ export default function BroadcastPanel({ showToast }) {
   useEffect(() => { loadChannels(); }, []);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
 
-  // 새로고침해도 어느 탭(수집현황/채널별편성표)에 있었는지 유지
+  // 새로고침해도 어느 탭(수집현황/채널별편성표/채널별메모)에 있었는지 유지
   useEffect(() => {
     if (!router.isReady) return;
     const q = router.query;
-    if (q.tab === 'broadcast' && ['status', 'channel'].includes(q.view)) {
+    if (q.tab === 'broadcast' && ['status', 'channel', 'notes'].includes(q.view)) {
       setViewMode(q.view);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -190,9 +192,16 @@ export default function BroadcastPanel({ showToast }) {
           color: viewMode === 'channel' ? '#fff' : '#4b6e4b',
           fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
         }}>📅 채널별 편성표</button>
+        <button onClick={() => setViewMode('notes')} style={{
+          padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
+          background: viewMode === 'notes' ? '#16a34a' : '#fff',
+          color: viewMode === 'notes' ? '#fff' : '#4b6e4b',
+          fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+        }}>📝 채널별 메모</button>
       </div>
 
       {viewMode === 'status' && <BroadcastCollectionStatus />}
+      {viewMode === 'notes' && <BroadcastChannelNotes showToast={showToast} />}
 
       {viewMode === 'channel' && (
         <>
