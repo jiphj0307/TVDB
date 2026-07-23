@@ -84,7 +84,12 @@ const QTY_ATOM = `\\d+\\s*${QTY_UNIT}`;
 const QTY_GROUP = new RegExp(`\\(\\s*${QTY_ATOM}(?:\\s*[*x×+,]\\s*${QTY_ATOM})*\\s*\\)`, 'gi');
 // 괄호 없이 단독으로 오거나("9박스", "총 9kg") 괄호 하나로만 감싼 단일 수량("(6박스)")도 제거
 const QTY_TOKEN = new RegExp(`(?:총\\s*)?\\(?\\s*\\d+\\s*${QTY_UNIT}\\s*\\)?`, 'gi');
-const PLUS_TOKEN = new RegExp(`\\+\\s*(?:플러스)?\\s*\\d*\\s*${QTY_UNIT}?`, 'gi');
+// "+ 플러스 60포"처럼 "+"뒤에 딸린 게 단순 문구뿐 아니라, "+열무김치 1kg"처럼 실제 보너스 상품명이
+// 붙는 경우도 있다. "+" 바로 뒤부터 수량 단위가 나오는 지점까지(최대 20자, 상품명 없이 그냥
+// "+ 60포"처럼 짧게 끝나는 경우도 포함) 통째로 지운다 — "+"만 지우고 보너스 상품명은 남기면
+// 서로 다른 기준명이 되어 같은 상품끼리도 안 합쳐진다(2026-07-23 "해남 땅끝마을 쌍둥이네 김치
+// 8kg+열무김치 1kg"이 "...김치" 단독 변형과 안 합쳐지던 버그).
+const PLUS_TOKEN = new RegExp(`\\+[^+()]{0,20}?${QTY_ATOM}`, 'gi');
 const BRACKET_PREFIX = /^(\[[^\]]{1,14}\]\s*)+/;
 
 function baseName(name) {
@@ -357,7 +362,7 @@ function FruitSection({ label, subMap }) {
   );
 }
 
-// 건기식 · 식품 섹션: 과일과 동일하게 하위 종류를 방송횟수 많은 순 탭으로 전환
+// 건기식 · 식품 섹션: 과일과 동일하게 하위 종류를 방송횟수 많은 순 탭으로 전환, 카드도 동일하게 접을 수 있게 함
 function FlatSection({ label, subMap }) {
   const subStats = useMemo(() => {
     const today = todayStr();
@@ -376,7 +381,21 @@ function FlatSection({ label, subMap }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subKeys.join(',')]);
 
+  // 과일 탭의 지역 카드와 동일하게, 여기 카드도 접었다 펼 수 있어야 한다 — 카드가 하나뿐이라고
+  // 접을 필요가 없는 게 아니라, 내용을 확인한 뒤 치워두고 싶을 수 있다. 탭(sub)마다 접힘 상태를
+  // 따로 기억한다.
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  function toggleCollapsed(sub) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(sub)) next.delete(sub); else next.add(sub);
+      return next;
+    });
+  }
+  const isCollapsed = collapsed.has(active);
+
   const rows = subMap[active]?.__flat__ || [];
+  const stats = subStats[active] || { channelCount: 0, count: 0 };
 
   return (
     <div style={{ marginBottom: 28 }}>
@@ -387,7 +406,20 @@ function FlatSection({ label, subMap }) {
         ))}
       </div>
       <div style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
-        <AggregatedTable rows={rows} />
+        <div
+          onClick={() => toggleCollapsed(active)}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer', marginBottom: isCollapsed ? 0 : 8, userSelect: 'none',
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#222' }}>
+            <span style={{ display: 'inline-block', width: 14, color: '#999' }}>{isCollapsed ? '▶' : '▼'}</span>
+            {active}
+          </div>
+          <div style={{ fontSize: 11, color: '#888' }}>{stats.channelCount}개 채널 · {stats.count}회</div>
+        </div>
+        {!isCollapsed && <AggregatedTable rows={rows} />}
       </div>
     </div>
   );
