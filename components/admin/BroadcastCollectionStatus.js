@@ -82,7 +82,6 @@ export default function BroadcastCollectionStatus() {
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #d1e8d1', color: '#4b6e4b' }}>
               <th style={{ padding: '4px 6px' }}>채널</th>
               <th style={{ padding: '4px 6px' }}>보유 기간</th>
-              <th style={{ padding: '4px 6px', width: 70, textAlign: 'right' }}>건수</th>
               <th style={{ padding: '4px 6px', width: 90, textAlign: 'right' }}>마지막 수집일</th>
               <th style={{ padding: '4px 6px', width: 80, textAlign: 'right' }}>뒤처짐</th>
             </tr>
@@ -94,7 +93,6 @@ export default function BroadcastCollectionStatus() {
                 <tr key={item.channel} style={{ borderBottom: '1px solid #eef6ee' }}>
                   <td style={{ padding: '4px 6px', fontWeight: 600 }}>{item.channel}</td>
                   <td style={{ padding: '4px 6px', color: '#8aaa8a' }}>{item.min} ~ {item.max}</td>
-                  <td style={{ padding: '4px 6px', textAlign: 'right', color: '#8aaa8a' }}>{item.count}</td>
                   <td style={{ padding: '4px 6px', textAlign: 'right' }}>{item.max}</td>
                   <td style={{
                     padding: '4px 6px', textAlign: 'right', fontWeight: 700,
@@ -106,7 +104,7 @@ export default function BroadcastCollectionStatus() {
               );
             })}
             {items.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 16, color: '#8aaa8a' }}>데이터가 없습니다.</td></tr>
+              <tr><td colSpan={4} style={{ padding: 16, color: '#8aaa8a' }}>데이터가 없습니다.</td></tr>
             )}
           </tbody>
         </table>
