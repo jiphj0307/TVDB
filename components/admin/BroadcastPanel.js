@@ -17,7 +17,7 @@ function mdKo(dateStr) {
 
 const emptyForm = {
   program_name: '', genre: '', description: '', source_url: '', verified: true,
-  air_day: '', air_time: '', is_airing: true, broadcast_memo: '',
+  air_day: '', air_time: '', is_airing: true, broadcast_memo: '', replay_url: '',
 };
 
 function StatusBadge({ isAiring }) {
@@ -110,6 +110,11 @@ function EditModal({ form, setForm, onSave, onCancel, saving }) {
             <label style={S.label}>출처 URL</label>
             <input value={form.source_url}
               onChange={e => setForm(f => ({ ...f, source_url: e.target.value }))} style={S.input} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>다시보기 URL</label>
+            <input placeholder="https://... (VOD/다시보기 페이지)" value={form.replay_url}
+              onChange={e => setForm(f => ({ ...f, replay_url: e.target.value }))} style={S.input} />
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#4b6e4b' }}>
             <input type="checkbox" checked={form.verified}
@@ -253,6 +258,7 @@ export default function BroadcastPanel({ showToast }) {
       air_time: row.air_time || '',
       is_airing: row.is_airing !== false,
       broadcast_memo: row.broadcast_memo || '',
+      replay_url: row.replay_url || '',
     });
   }
 
@@ -271,6 +277,7 @@ export default function BroadcastPanel({ showToast }) {
       air_time: form.air_time.trim() || null,
       is_airing: !!form.is_airing,
       broadcast_memo: form.broadcast_memo.trim() || null,
+      replay_url: form.replay_url.trim() || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'program_name' });
     setSaving(false);
@@ -295,6 +302,7 @@ export default function BroadcastPanel({ showToast }) {
       air_time: editForm.air_time.trim() || null,
       is_airing: !!editForm.is_airing,
       broadcast_memo: editForm.broadcast_memo.trim() || null,
+      replay_url: editForm.replay_url.trim() || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'program_name' });
     setEditSaving(false);
@@ -478,6 +486,11 @@ export default function BroadcastPanel({ showToast }) {
                     <input placeholder="https://..." value={form.source_url}
                       onChange={e => setForm(f => ({ ...f, source_url: e.target.value }))} style={S.input} />
                   </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={S.label}>다시보기 URL</label>
+                    <input placeholder="https://... (VOD/다시보기 페이지)" value={form.replay_url}
+                      onChange={e => setForm(f => ({ ...f, replay_url: e.target.value }))} style={S.input} />
+                  </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#4b6e4b' }}>
                     <input type="checkbox" checked={form.verified}
                       onChange={e => setForm(f => ({ ...f, verified: e.target.checked }))} />
@@ -522,7 +535,13 @@ export default function BroadcastPanel({ showToast }) {
                         <td style={{ padding: 6 }}>
                           {row.program_name}
                           {row.has_replay !== null && row.has_replay !== undefined && (
-                            <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
+                            row.replay_url ? (
+                              <a href={row.replay_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6, textDecoration: 'none' }}>
+                                <ReplayBadge hasReplay={row.has_replay} />
+                              </a>
+                            ) : (
+                              <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
+                            )
                           )}
                         </td>
                         <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_day}</td>

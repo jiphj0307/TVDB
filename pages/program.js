@@ -73,7 +73,7 @@ export default function Program() {
 
   // 정규 요일/시간은 날짜와 무관하게 항상 같으니 최초 1회만 불러온다.
   useEffect(() => {
-    supabase.from('tvdb_program_info').select('program_name, channel, air_day, air_time, is_airing, has_replay')
+    supabase.from('tvdb_program_info').select('program_name, channel, air_day, air_time, is_airing, has_replay, replay_url')
       .then(({ data }) => setInfoRows(data || []));
   }, []);
 
@@ -248,7 +248,15 @@ export default function Program() {
                   <td style={{ padding: '6px' }}>{r.channel}</td>
                   <td style={{ padding: '6px' }}>
                     {r.program_name}
-                    {info && <ReplayBadge hasReplay={info.has_replay} />}
+                    {info && (
+                      info.replay_url ? (
+                        <a href={info.replay_url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+                          <ReplayBadge hasReplay={info.has_replay} />
+                        </a>
+                      ) : (
+                        <ReplayBadge hasReplay={info.has_replay} />
+                      )
+                    )}
                   </td>
                   <td style={{ padding: '6px' }}>{r.genre}</td>
                   <td style={{ padding: '6px', color: '#888', fontSize: 12.5 }}>
