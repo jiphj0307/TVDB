@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
@@ -152,6 +152,56 @@ function EditModal({ form, setForm, onSave, onCancel, saving }) {
   );
 }
 
+// 회차 목록을 프로그램 행 아래에 펼치던 방식은 목록이 길어질수록 다른 프로그램 행들이 아래로
+// 밀려나서 위치를 잃어버리게 만들었다. "수정"과 같은 모달 패턴으로 통일해서 목록 위치를 유지한다.
+function EpisodeModal({ programName, episodes, onClose, onToggle }) {
+  if (!programName) return null;
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 640, width: '100%',
+        maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{programName} — 회차별 내용</div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
+        </div>
+        {!episodes ? <p style={{ margin: 0, color: '#8aaa8a' }}>불러오는 중...</p> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: '#8aaa8a' }}>
+                <th style={{ padding: 4, width: 40 }}>사용</th>
+                <th style={{ padding: 4, width: 64 }}>회차</th>
+                <th style={{ padding: 4, width: 90 }}>방영일</th>
+                <th style={{ padding: 4 }}>내용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {episodes.map(ep => (
+                <tr key={ep.id} style={{ borderBottom: '1px solid #eef6ee' }}>
+                  <td style={{ padding: 4 }}>
+                    <input type="checkbox" checked={!!ep.is_selected}
+                      onChange={() => onToggle(ep)} style={{ cursor: 'pointer' }} />
+                  </td>
+                  <td style={{ padding: 4, whiteSpace: 'nowrap' }}>{ep.episode_no}</td>
+                  <td style={{ padding: 4, color: '#8aaa8a', whiteSpace: 'nowrap' }}>{ep.air_date}</td>
+                  <td style={{ padding: 4 }}>{ep.content}</td>
+                </tr>
+              ))}
+              {episodes.length === 0 && (
+                <tr><td colSpan={4} style={{ padding: 8, color: '#8aaa8a' }}>등록된 회차가 없습니다.</td></tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function BroadcastPanel({ showToast }) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState('status'); // 'status' | 'channel' | 'notes'
@@ -172,7 +222,7 @@ export default function BroadcastPanel({ showToast }) {
   const [editSaving, setEditSaving] = useState(false);
 
   // 건강·생활·먹거리 프로그램의 회차별 내용 + "사용" 체크박스(블로그 소재 고르기용).
-  // program_name -> episode 배열. 펼쳐볼 때만 불러온다(전부 미리 불러오면 느려짐).
+  // program_name -> episode 배열. 모달을 열 때만 불러온다(전부 미리 불러오면 느려짐).
   const [episodes, setEpisodes] = useState({});
   const [expandedProgram, setExpandedProgram] = useState(null);
 
@@ -350,7 +400,6 @@ export default function BroadcastPanel({ showToast }) {
   }
 
   async function toggleEpisodes(programName) {
-    if (expandedProgram === programName) { setExpandedProgram(null); return; }
     setExpandedProgram(programName);
     if (!episodes[programName]) {
       const { data, error } = await supabase.from('tvdb_program_episodes').select('*')
@@ -595,70 +644,34 @@ export default function BroadcastPanel({ showToast }) {
                   </thead>
                   <tbody>
                     {infoRows.map(row => (
-                      <Fragment key={row.program_name}>
-                        <tr style={{ borderBottom: '1px solid #eef6ee' }}>
-                          <td style={{ padding: 6 }}>
-                            {row.program_name}
-                            {row.has_replay === true && row.replay_url && (
-                              <a href={row.replay_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6, textDecoration: 'none' }}>
-                                <ReplayBadge hasReplay={row.has_replay} />
-                              </a>
-                            )}
-                            {row.has_replay === false && (
-                              <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
-                            )}
-                            {row.is_health_content && <span style={{ marginLeft: 6 }}><HealthBadge isHealth={row.is_health_content} /></span>}
-                          </td>
-                          <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_day}</td>
-                          <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_time}</td>
-                          <td style={{ padding: 6 }}><StatusBadge isAiring={row.is_airing !== false} /></td>
-                          <td style={{ padding: 6 }}>{row.genre}</td>
-                          <td style={{ padding: 6 }}>{row.verified ? '✅' : '❌'}</td>
-                          <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
-                            <button onClick={() => startEdit(row)} style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12 }}>수정</button>
-                            {row.is_health_content && (
-                              <button onClick={() => toggleEpisodes(row.program_name)}
-                                style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 4 }}>
-                                {expandedProgram === row.program_name ? '회차 닫기' : '회차 보기'}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                        {expandedProgram === row.program_name && (
-                          <tr>
-                            <td colSpan={7} style={{ padding: '8px 10px', background: '#fafdfb', borderBottom: '1px solid #eef6ee' }}>
-                              {!episodes[row.program_name] ? <p style={{ margin: 0, color: '#8aaa8a' }}>불러오는 중...</p> : (
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                                  <thead>
-                                    <tr style={{ textAlign: 'left', color: '#8aaa8a' }}>
-                                      <th style={{ padding: 4, width: 40 }}>사용</th>
-                                      <th style={{ padding: 4, width: 64 }}>회차</th>
-                                      <th style={{ padding: 4, width: 90 }}>방영일</th>
-                                      <th style={{ padding: 4 }}>내용</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {episodes[row.program_name].map(ep => (
-                                      <tr key={ep.id} style={{ borderBottom: '1px solid #eef6ee' }}>
-                                        <td style={{ padding: 4 }}>
-                                          <input type="checkbox" checked={!!ep.is_selected}
-                                            onChange={() => toggleEpisodeSelected(row.program_name, ep)} style={{ cursor: 'pointer' }} />
-                                        </td>
-                                        <td style={{ padding: 4, whiteSpace: 'nowrap' }}>{ep.episode_no}</td>
-                                        <td style={{ padding: 4, color: '#8aaa8a', whiteSpace: 'nowrap' }}>{ep.air_date}</td>
-                                        <td style={{ padding: 4 }}>{ep.content}</td>
-                                      </tr>
-                                    ))}
-                                    {episodes[row.program_name].length === 0 && (
-                                      <tr><td colSpan={4} style={{ padding: 8, color: '#8aaa8a' }}>등록된 회차가 없습니다.</td></tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                      <tr key={row.program_name} style={{ borderBottom: '1px solid #eef6ee' }}>
+                        <td style={{ padding: 6 }}>
+                          {row.program_name}
+                          {row.has_replay === true && row.replay_url && (
+                            <a href={row.replay_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6, textDecoration: 'none' }}>
+                              <ReplayBadge hasReplay={row.has_replay} />
+                            </a>
+                          )}
+                          {row.has_replay === false && (
+                            <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
+                          )}
+                          {row.is_health_content && <span style={{ marginLeft: 6 }}><HealthBadge isHealth={row.is_health_content} /></span>}
+                        </td>
+                        <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_day}</td>
+                        <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_time}</td>
+                        <td style={{ padding: 6 }}><StatusBadge isAiring={row.is_airing !== false} /></td>
+                        <td style={{ padding: 6 }}>{row.genre}</td>
+                        <td style={{ padding: 6 }}>{row.verified ? '✅' : '❌'}</td>
+                        <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
+                          <button onClick={() => startEdit(row)} style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12 }}>수정</button>
+                          {row.is_health_content && (
+                            <button onClick={() => toggleEpisodes(row.program_name)}
+                              style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 4 }}>
+                              회차 보기
+                            </button>
+                          )}
+                        </td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -669,6 +682,8 @@ export default function BroadcastPanel({ showToast }) {
       )}
 
       <EditModal form={editForm} setForm={setEditForm} onSave={handleEditSubmit} onCancel={() => setEditForm(null)} saving={editSaving} />
+      <EpisodeModal programName={expandedProgram} episodes={episodes[expandedProgram]}
+        onClose={() => setExpandedProgram(null)} onToggle={(ep) => toggleEpisodeSelected(expandedProgram, ep)} />
     </div>
   );
 }
