@@ -293,6 +293,17 @@ function FruitSection({ label, subMap }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subKeys.join(',')]);
 
+  // 카드가 지역별로 여러 개 뜨면 화면이 길어져서, 카드별로 접었다 펼 수 있게 한다.
+  // 접힌 카드도 헤더에 채널수·방송횟수는 계속 보이니 접었다고 정보가 사라지진 않는다.
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  function toggleCollapsed(province) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(province)) next.delete(province); else next.add(province);
+      return next;
+    });
+  }
+
   const provinces = subMap[active] || {};
   const provinceKeys = Object.keys(provinces);
 
@@ -309,18 +320,34 @@ function FruitSection({ label, subMap }) {
           const cities = provinces[province];
           const cityKeys = Object.keys(cities);
           const onlyFlat = cityKeys.length === 1 && cityKeys[0] === '__flat__';
+          const stats = collectStats(cities, todayStr());
+          const isCollapsed = collapsed.has(province);
           return (
             <div key={province} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#222', marginBottom: 8 }}>{province}</div>
-              {onlyFlat ? (
-                <AggregatedTable rows={cities.__flat__} />
-              ) : (
-                cityKeys.map(city => (
-                  <div key={city} style={{ marginBottom: 8 }}>
-                    {city !== '__flat__' && <div style={{ fontSize: 11.5, color: '#666', marginBottom: 4 }}>{city}</div>}
-                    <AggregatedTable rows={cities[city]} />
-                  </div>
-                ))
+              <div
+                onClick={() => toggleCollapsed(province)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  cursor: 'pointer', marginBottom: isCollapsed ? 0 : 8, userSelect: 'none',
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#222' }}>
+                  <span style={{ display: 'inline-block', width: 14, color: '#999' }}>{isCollapsed ? '▶' : '▼'}</span>
+                  {province}
+                </div>
+                <div style={{ fontSize: 11, color: '#888' }}>{stats.channelCount}개 채널 · {stats.count}회</div>
+              </div>
+              {!isCollapsed && (
+                onlyFlat ? (
+                  <AggregatedTable rows={cities.__flat__} />
+                ) : (
+                  cityKeys.map(city => (
+                    <div key={city} style={{ marginBottom: 8 }}>
+                      {city !== '__flat__' && <div style={{ fontSize: 11.5, color: '#666', marginBottom: 4 }}>{city}</div>}
+                      <AggregatedTable rows={cities[city]} />
+                    </div>
+                  ))
+                )
               )}
             </div>
           );
