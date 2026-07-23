@@ -165,10 +165,15 @@ function EpisodeModal({ programName, episodes, onClose, onToggle }) {
         background: '#fff', borderRadius: 10, padding: 20, maxWidth: 640, width: '100%',
         maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>{programName} — 회차별 내용</div>
           <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
         </div>
+        {episodes && episodes.length > 0 && (
+          <div style={{ fontSize: 12, color: '#8aaa8a', marginBottom: 10 }}>
+            총 {episodes.length}회 · 최종 방영일 {episodes[0].air_date}
+          </div>
+        )}
         {!episodes ? <p style={{ margin: 0, color: '#8aaa8a' }}>불러오는 중...</p> : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
@@ -225,6 +230,8 @@ export default function BroadcastPanel({ showToast }) {
   // program_name -> episode 배열. 모달을 열 때만 불러온다(전부 미리 불러오면 느려짐).
   const [episodes, setEpisodes] = useState({});
   const [expandedProgram, setExpandedProgram] = useState(null);
+  // program_name -> { count, latestDate }. "회차 보기"는 실제로 회차가 입력된 프로그램에만 노출한다.
+  const [episodeCounts, setEpisodeCounts] = useState({});
 
   useEffect(() => { loadChannels(); }, []);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
@@ -278,17 +285,30 @@ export default function BroadcastPanel({ showToast }) {
     setLoading(true);
     setEpisodes({});
     setExpandedProgram(null);
+    setEpisodeCounts({});
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 6);
     const fromDate = weekAgo.toISOString().slice(0, 10);
 
-    const [{ data: sched }, { data: info }, { data: noteRow }] = await Promise.all([
+    const [{ data: sched }, { data: info }, { data: noteRow }, { data: epRows }] = await Promise.all([
       supabase.from('tvdb_program').select('id, broadcast_date, time_start, program_name, genre')
         .eq('channel', channel).gte('broadcast_date', fromDate)
         .order('broadcast_date', { ascending: true }).order('time_start', { ascending: true }),
       supabase.from('tvdb_program_info').select('*').eq('channel', channel),
       supabase.from('tvdb_channel_notes').select('*').eq('channel', channel).maybeSingle(),
+      supabase.from('tvdb_program_episodes').select('program_name, air_date').eq('channel', channel),
     ]);
+
+    // 회차 데이터가 실제로 입력된 프로그램만 "회차 보기"를 노출하기 위한 프로그램별 집계
+    // (건수 + 최종 방영일). 회차 테이블은 프로그램당 최대 100여 건 수준이라 매번 다시 훑어도 가볍다.
+    const counts = {};
+    (epRows || []).forEach(ep => {
+      const c = counts[ep.program_name] || { count: 0, latestDate: null };
+      c.count += 1;
+      if (!c.latestDate || ep.air_date > c.latestDate) c.latestDate = ep.air_date;
+      counts[ep.program_name] = c;
+    });
+    setEpisodeCounts(counts);
 
     setSchedule(sched || []);
     // 등록된 프로그램 목록은 원래 DB 조회 순서 그대로 쌓여서 뒤죽박죽으로 보였다 — 가나다순으로 정렬.
@@ -664,10 +684,10 @@ export default function BroadcastPanel({ showToast }) {
                         <td style={{ padding: 6 }}>{row.verified ? '✅' : '❌'}</td>
                         <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
                           <button onClick={() => startEdit(row)} style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12 }}>수정</button>
-                          {row.is_health_content && (
+                          {row.is_health_content && episodeCounts[row.program_name] && (
                             <button onClick={() => toggleEpisodes(row.program_name)}
                               style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 4 }}>
-                              회차 보기
+                              회차 보기 ({episodeCounts[row.program_name].count}회 · {episodeCounts[row.program_name].latestDate})
                             </button>
                           )}
                         </td>
