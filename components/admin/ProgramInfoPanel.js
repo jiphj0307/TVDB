@@ -2,9 +2,84 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
 
-const emptyForm = { program_name: '', channel: '', genre: '', description: '', source_url: '', verified: true };
+const emptyForm = { program_name: '', channel: '', genre: '', description: '', source_url: '', verified: true, air_day: '', air_time: '' };
 
 const GROUP_LABEL = { tv: '📺 TV 채널', shopping: '🛍️ 홈쇼핑 채널' };
+
+// "수정" 버튼을 눌렀을 때 맨 위 등록 폼으로 스크롤시키던 방식은, 목록 깊숙이 스크롤해서 보고 있던
+// 사용자 입장에선 "여기서 바로 안 되고 왜 위로 튕기지?"로 느껴진다. 그 자리에서 바로 편집할 수 있게
+// 같은 필드 구성의 모달로 뺐다.
+function EditModal({ form, setForm, onSave, onCancel, saving }) {
+  if (!form) return null;
+  return (
+    <div onClick={onCancel} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 520, width: '100%',
+        maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>프로그램 정보 수정</div>
+          <button onClick={onCancel} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
+        </div>
+        <form onSubmit={onSave}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={S.label}>프로그램명 / 상품명</label>
+              <input value={form.program_name}
+                onChange={e => setForm(f => ({ ...f, program_name: e.target.value }))} style={S.input} />
+            </div>
+            <div>
+              <label style={S.label}>채널</label>
+              <input value={form.channel}
+                onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} style={S.input} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={S.label}>요일</label>
+              <input placeholder="예: 화,수,목 또는 월~금" value={form.air_day}
+                onChange={e => setForm(f => ({ ...f, air_day: e.target.value }))} style={S.input} />
+            </div>
+            <div>
+              <label style={S.label}>시간</label>
+              <input placeholder="예: 저녁 7시 또는 22:00(1부)/23:20(2부)" value={form.air_time}
+                onChange={e => setForm(f => ({ ...f, air_time: e.target.value }))} style={S.input} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>장르</label>
+            <input value={form.genre}
+              onChange={e => setForm(f => ({ ...f, genre: e.target.value }))} style={S.input} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>설명</label>
+            <textarea rows={3} value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={S.textarea} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>출처 URL</label>
+            <input value={form.source_url}
+              onChange={e => setForm(f => ({ ...f, source_url: e.target.value }))} style={S.input} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#4b6e4b' }}>
+            <input type="checkbox" checked={form.verified}
+              onChange={e => setForm(f => ({ ...f, verified: e.target.checked }))} />
+            출처로 확인됨 (체크 해제 시 "확인 안 됨"으로 표시)
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="submit" disabled={saving} style={{ ...S.btn(), opacity: saving ? 0.6 : 1 }}>
+              {saving ? '저장 중...' : '저장'}
+            </button>
+            <button type="button" onClick={onCancel} style={S.btnGhost}>취소</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 export default function ProgramInfoPanel({ showToast }) {
   const [infoRows, setInfoRows] = useState([]);
@@ -15,6 +90,10 @@ export default function ProgramInfoPanel({ showToast }) {
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // 기존 항목 "수정"은 이 상태로 뜨는 모달에서 처리한다(위 form/handleSubmit은 신규 등록 전용).
+  const [editForm, setEditForm] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -72,15 +151,16 @@ export default function ProgramInfoPanel({ showToast }) {
   useEffect(() => { loadAll(); }, []);
 
   function startEdit(row) {
-    setForm({
+    setEditForm({
       program_name: row.program_name,
       channel: row.channel || '',
       genre: row.genre || '',
       description: row.description || '',
       source_url: row.source_url || '',
       verified: row.verified,
+      air_day: row.air_day || '',
+      air_time: row.air_time || '',
     });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function startNewFromMissing(p) {
@@ -99,12 +179,36 @@ export default function ProgramInfoPanel({ showToast }) {
       description: form.description.trim() || null,
       source_url: form.source_url.trim() || null,
       verified: !!form.verified,
+      air_day: form.air_day.trim() || null,
+      air_time: form.air_time.trim() || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'program_name' });
     setSaving(false);
     if (error) { showToast('❌ 저장 실패: ' + error.message); return; }
     showToast('✅ 저장 완료');
     setForm(emptyForm);
+    loadAll();
+  }
+
+  async function handleEditSubmit(e) {
+    e.preventDefault();
+    if (!editForm.program_name.trim()) { showToast('❌ 프로그램명은 필수입니다'); return; }
+    setEditSaving(true);
+    const { error } = await supabase.from('tvdb_program_info').upsert({
+      program_name: editForm.program_name.trim(),
+      channel: editForm.channel.trim() || null,
+      genre: editForm.genre.trim() || null,
+      description: editForm.description.trim() || null,
+      source_url: editForm.source_url.trim() || null,
+      verified: !!editForm.verified,
+      air_day: editForm.air_day.trim() || null,
+      air_time: editForm.air_time.trim() || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'program_name' });
+    setEditSaving(false);
+    if (error) { showToast('❌ 저장 실패: ' + error.message); return; }
+    showToast('✅ 저장 완료');
+    setEditForm(null);
     loadAll();
   }
 
@@ -149,6 +253,7 @@ export default function ProgramInfoPanel({ showToast }) {
         <div style={S.cardTitle}>📺 프로그램 정보 등록</div>
         <p style={{ fontSize: 13, color: '#4b6e4b', marginTop: -12, marginBottom: 18 }}>
           프로그램명(또는 홈쇼핑 상품명) → 장르·설명·출처 URL을 등록합니다. 회차 번호("101회" 등)는 자동으로 무시하고 매칭합니다.
+          이미 등록된 항목을 고칠 땐 아래 목록에서 "수정" 버튼을 누르면 뜨는 모달을 쓰세요 — 이 폼은 신규 등록 전용입니다.
         </p>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -161,6 +266,18 @@ export default function ProgramInfoPanel({ showToast }) {
               <label style={S.label}>채널</label>
               <input placeholder="예: MBN 또는 GS홈쇼핑" value={form.channel}
                 onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} style={S.input} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={S.label}>요일</label>
+              <input placeholder="예: 화,수,목 또는 월~금" value={form.air_day}
+                onChange={e => setForm(f => ({ ...f, air_day: e.target.value }))} style={S.input} />
+            </div>
+            <div>
+              <label style={S.label}>시간</label>
+              <input placeholder="예: 저녁 7시 또는 22:00(1부)/23:20(2부)" value={form.air_time}
+                onChange={e => setForm(f => ({ ...f, air_time: e.target.value }))} style={S.input} />
             </div>
           </div>
           <div style={{ marginBottom: 12 }}>
@@ -249,6 +366,8 @@ export default function ProgramInfoPanel({ showToast }) {
                         <thead>
                           <tr style={{ textAlign: 'left', borderBottom: '2px solid #d1e8d1' }}>
                             <th style={{ padding: 6 }}>프로그램명 / 상품명</th>
+                            <th style={{ padding: 6 }}>요일</th>
+                            <th style={{ padding: 6 }}>시간</th>
                             <th style={{ padding: 6 }}>장르</th>
                             <th style={{ padding: 6 }}>확인됨</th>
                             <th style={{ padding: 6 }}></th>
@@ -258,6 +377,8 @@ export default function ProgramInfoPanel({ showToast }) {
                           {g.registered.map(row => (
                             <tr key={row.program_name} style={{ borderBottom: '1px solid #eef6ee' }}>
                               <td style={{ padding: 6 }}>{row.program_name}</td>
+                              <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_day}</td>
+                              <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_time}</td>
                               <td style={{ padding: 6 }}>{row.genre}</td>
                               <td style={{ padding: 6 }}>{row.verified ? '✅' : '❌'}</td>
                               <td style={{ padding: 6 }}>
@@ -275,6 +396,8 @@ export default function ProgramInfoPanel({ showToast }) {
           })}
         </>
       )}
+
+      <EditModal form={editForm} setForm={setEditForm} onSave={handleEditSubmit} onCancel={() => setEditForm(null)} saving={editSaving} />
     </div>
   );
 }
