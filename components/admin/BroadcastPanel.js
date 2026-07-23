@@ -108,10 +108,13 @@ export default function BroadcastPanel({ showToast }) {
     setMissing(miss);
 
     const availableDates = Array.from(new Set((sched || []).map(r => r.broadcast_date))).sort();
+    const todayStr = new Date().toISOString().slice(0, 10);
     const q = router.query;
     const wantedDate = q.tab === 'broadcast' && q.channel === channel && q.date ? q.date : '';
     setSelectedDate(
-      wantedDate && availableDates.includes(wantedDate) ? wantedDate : (availableDates[availableDates.length - 1] || '')
+      wantedDate && availableDates.includes(wantedDate) ? wantedDate
+        : availableDates.includes(todayStr) ? todayStr
+        : (availableDates[availableDates.length - 1] || '')
     );
 
     setLoading(false);

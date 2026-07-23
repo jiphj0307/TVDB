@@ -6,10 +6,6 @@ import { AdSlot } from '../components/AdSlot';
 import { useAdSlot } from '../lib/AdSlotsContext';
 import { Nav } from '../components/Nav';
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 const WEEKDAY_KR = ['일', '월', '화', '수', '목', '금', '토'];
 
 function toDateStr(d) {
@@ -17,6 +13,10 @@ function toDateStr(d) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function todayStr() {
+  return toDateStr(new Date());
 }
 
 // 오늘 기준 weekOffset주 전의 7일 목록. weekOffset=0이면 오늘 포함 최근 7일.

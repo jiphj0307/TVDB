@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
 import UnclassifiedReview from './UnclassifiedReview';
 import CollectionStatus from './CollectionStatus';
+import ShoppingChannelNotes from './ShoppingChannelNotes';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 function dowKo(dateStr) {
@@ -25,16 +26,16 @@ export default function ShoppingPanel({ showToast }) {
   const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('');
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('status'); // 'status' | 'channel' | 'unclassified'
+  const [viewMode, setViewMode] = useState('status'); // 'status' | 'channel' | 'unclassified' | 'notes'
 
   useEffect(() => { loadChannels(); }, []);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
 
-  // 새로고침해도 어느 탭(수집현황/채널별편성표/미분류검토)에 있었는지 유지
+  // 새로고침해도 어느 탭(수집현황/채널별편성표/미분류검토/채널별메모)에 있었는지 유지
   useEffect(() => {
     if (!router.isReady) return;
     const q = router.query;
-    if (q.tab === 'shopping' && ['status', 'channel', 'unclassified'].includes(q.view)) {
+    if (q.tab === 'shopping' && ['status', 'channel', 'unclassified', 'notes'].includes(q.view)) {
       setViewMode(q.view);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,10 +143,17 @@ export default function ShoppingPanel({ showToast }) {
           color: viewMode === 'unclassified' ? '#fff' : '#4b6e4b',
           fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
         }}>🔍 미분류 검토</button>
+        <button onClick={() => setViewMode('notes')} style={{
+          padding: '8px 16px', borderRadius: 8, border: '1px solid #d1e8d1',
+          background: viewMode === 'notes' ? '#16a34a' : '#fff',
+          color: viewMode === 'notes' ? '#fff' : '#4b6e4b',
+          fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+        }}>📝 채널별 메모</button>
       </div>
 
       {viewMode === 'status' && <CollectionStatus />}
       {viewMode === 'unclassified' && <UnclassifiedReview showToast={showToast} />}
+      {viewMode === 'notes' && <ShoppingChannelNotes showToast={showToast} />}
 
       {viewMode === 'channel' && (
         <>
