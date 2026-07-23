@@ -29,6 +29,19 @@ function StatusBadge({ isAiring }) {
   );
 }
 
+// has_replay는 채널 공식 편성표를 훑어서 실제로 다시보기 링크가 붙어있던 프로그램만 true/false로
+// 확정한 값이다(2026-07-23, 채널A 32개 확인). 아직 확인 안 한 프로그램은 null이라 뱃지를 안 띄운다 —
+// 확인도 안 했는데 "다시보기 없음"으로 단정하면 안 되니까.
+function ReplayBadge({ hasReplay }) {
+  if (hasReplay === null || hasReplay === undefined) return null;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+      background: hasReplay ? '#dbeafe' : '#f3f4f6', color: hasReplay ? '#2563eb' : '#9ca3af',
+    }}>{hasReplay ? '📺 다시보기' : '다시보기 없음'}</span>
+  );
+}
+
 // "수정" 버튼을 눌렀을 때 맨 위 등록 폼으로 스크롤시키던 방식은, 목록 깊숙이 스크롤해서 보고 있던
 // 사용자 입장에선 "여기서 바로 안 되고 왜 위로 튕기지?"로 느껴진다. 그 자리에서 바로 편집할 수 있게
 // 같은 필드 구성의 모달로 뺐다.
@@ -378,13 +391,19 @@ export default function BroadcastPanel({ showToast }) {
                 {selectedDate && (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <tbody>
-                      {rowsOfSelectedDate.map(row => (
+                      {rowsOfSelectedDate.map(row => {
+                        const info = infoRows.find(i => row.program_name.startsWith(i.program_name));
+                        return (
                         <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
                           <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
                           <td style={{ padding: '4px 6px' }}>{row.program_name}</td>
                           <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.genre}</td>
+                          <td style={{ padding: '4px 6px', color: '#8aaa8a', fontSize: 12 }}>
+                            {info ? [info.air_day, info.air_time].filter(Boolean).join(' ') || '-' : ''}
+                          </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {rowsOfSelectedDate.length === 0 && (
                         <tr><td style={{ padding: 16, color: '#8aaa8a' }}>이 날짜엔 데이터가 없습니다.</td></tr>
                       )}
@@ -500,7 +519,12 @@ export default function BroadcastPanel({ showToast }) {
                   <tbody>
                     {infoRows.map(row => (
                       <tr key={row.program_name} style={{ borderBottom: '1px solid #eef6ee' }}>
-                        <td style={{ padding: 6 }}>{row.program_name}</td>
+                        <td style={{ padding: 6 }}>
+                          {row.program_name}
+                          {row.has_replay !== null && row.has_replay !== undefined && (
+                            <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
+                          )}
+                        </td>
                         <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_day}</td>
                         <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_time}</td>
                         <td style={{ padding: 6 }}><StatusBadge isAiring={row.is_airing !== false} /></td>

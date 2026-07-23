@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
@@ -31,6 +30,24 @@ function weekDates(weekOffset = 0, days = 7) {
   return arr;
 }
 
+// admin에서 등록한 tvdb_program_info(채널+프로그램명 기준, 회차 번호는 startsWith로 무시)를
+// 찾아 정규 요일/시간을 붙여준다. 못 찾으면 undefined — 그 프로그램은 아직 admin에 등록 안 된 것.
+function findInfo(infoRows, row) {
+  return infoRows.find(i => i.channel === row.channel && row.program_name.startsWith(i.program_name));
+}
+
+// has_replay는 채널 공식 편성표를 직접 확인해서 다시보기 링크가 실제로 있던 프로그램만 true/false로
+// 확정한 값이다. 아직 확인 안 한 프로그램은 null이라 뱃지를 아예 안 띄운다.
+function ReplayBadge({ hasReplay }) {
+  if (hasReplay === null || hasReplay === undefined) return null;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '1px 6px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+      marginLeft: 6, background: hasReplay ? '#dbeafe' : '#f3f4f6', color: hasReplay ? '#2563eb' : '#9ca3af',
+    }}>{hasReplay ? '📺 다시보기' : '다시보기 없음'}</span>
+  );
+}
+
 export default function Program() {
   const router = useRouter();
   const routerReady = router.isReady;
@@ -38,6 +55,7 @@ export default function Program() {
   const [date, setDate] = useState(todayStr());
   const [weekOffset, setWeekOffset] = useState(0);
   const [rows, setRows] = useState([]);
+  const [infoRows, setInfoRows] = useState([]); // tvdb_program_info 전체 — 정규 요일/시간 조회용
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [channelFilter, setChannelFilter] = useState('');
@@ -51,6 +69,12 @@ export default function Program() {
   // 관리자 로그인 여부(admin.js에서 로그인 성공 시 sessionStorage.tvdb_admin='1'로 저장함)
   useEffect(() => {
     setIsAdmin(sessionStorage.getItem('tvdb_admin') === '1');
+  }, []);
+
+  // 정규 요일/시간은 날짜와 무관하게 항상 같으니 최초 1회만 불러온다.
+  useEffect(() => {
+    supabase.from('tvdb_program_info').select('program_name, channel, air_day, air_time, is_airing, has_replay')
+      .then(({ data }) => setInfoRows(data || []));
   }, []);
 
   // URL 쿼리스트링 -> 상태로 최초 1회 복원 (새로고침해도 유지됨)
@@ -207,24 +231,44 @@ export default function Program() {
               <th style={{ padding: '8px 6px' }}>채널</th>
               <th style={{ padding: '8px 6px' }}>프로그램명</th>
               <th style={{ padding: '8px 6px' }}>장르</th>
+              <th style={{ padding: '8px 6px' }}>정규편성</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map(r => (
-              <tr key={r.id} style={{ borderBottom: '1px solid #eee', background: r.is_life_health_target ? '#fff3cd' : undefined }}>
-                {isAdmin && (
+            {filtered.map(r => {
+              const info = findInfo(infoRows, r);
+              return (
+                <tr key={r.id} style={{ borderBottom: '1px solid #eee', background: r.is_life_health_target ? '#fff3cd' : undefined }}>
+                  {isAdmin && (
+                    <td style={{ padding: '6px' }}>
+                      <input type="checkbox" checked={!!r.is_life_health_target} onChange={() => toggleTarget(r)} style={{ cursor: 'pointer' }} />
+                    </td>
+                  )}
+                  <td style={{ padding: '6px' }}>{r.time_start}</td>
+                  <td style={{ padding: '6px' }}>{r.channel}</td>
                   <td style={{ padding: '6px' }}>
-                    <input type="checkbox" checked={!!r.is_life_health_target} onChange={() => toggleTarget(r)} style={{ cursor: 'pointer' }} />
+                    {r.program_name}
+                    {info && <ReplayBadge hasReplay={info.has_replay} />}
                   </td>
-                )}
-                <td style={{ padding: '6px' }}>{r.time_start}</td>
-                <td style={{ padding: '6px' }}>{r.channel}</td>
-                <td style={{ padding: '6px' }}>{r.program_name}</td>
-                <td style={{ padding: '6px' }}>{r.genre}</td>
-              </tr>
-            ))}
+                  <td style={{ padding: '6px' }}>{r.genre}</td>
+                  <td style={{ padding: '6px', color: '#888', fontSize: 12.5 }}>
+                    {info ? (
+                      <>
+                        {[info.air_day, info.air_time].filter(Boolean).join(' ') || '-'}
+                        {info.is_airing === false && (
+                          <span style={{
+                            marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#6b7280', background: '#f3f4f6',
+                            borderRadius: 4, padding: '1px 5px',
+                          }}>종영 등록됨</span>
+                        )}
+                      </>
+                    ) : ''}
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 5 : 4} style={{ padding: 16, color: '#888' }}>이 날짜엔 데이터가 없습니다.</td></tr>
+              <tr><td colSpan={isAdmin ? 6 : 5} style={{ padding: 16, color: '#888' }}>이 날짜엔 데이터가 없습니다.</td></tr>
             )}
           </tbody>
         </table>
