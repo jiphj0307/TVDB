@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { S } from './AdminUI';
@@ -69,10 +68,16 @@ function buildInstruction(channel, note, status) {
   return `TVDB MCP 접속해서 ${channel} 편성표를 ${start}부터 ${sunday}(이번 주 일요일)까지 가져와서 tvdb_program에 채워줘.`;
 }
 
+// 홈쇼핑 쪽 ShoppingChannelNotes.js와 동일하게, tvdb_channel_notes를 그대로 쓰되 실제 채널명이 될 수
+// 없는 키로 "전체 작업 메모"를 저장한다. 홈쇼핑·일반방송이 같은 테이블을 공유하므로, 홈쇼핑 쪽 예약키
+// (__전체작업메모__)와 겹치지 않도록 일반방송 전용 키를 따로 둔다. 이 키는 tvdb_program에서 뽑은 실제
+// 채널 목록에 섞여 들어오지 않으므로 목록 루프 바깥에 별도로 그려서 정렬과 무관하게 항상 맨 위에 고정된다.
+const GENERAL_NOTE_KEY = '__전체작업메모_방송__';
+
 export default function BroadcastChannelNotes({ showToast }) {
   const [channels, setChannels] = useState([]);
-  const [notes, setNotes] = useState({});   // channel -> 저장된 note
-  const [drafts, setDrafts] = useState({}); // channel -> 편집 중인 note
+  const [notes, setNotes] = useState({});   // channel -> 저장된 note (GENERAL_NOTE_KEY 포함)
+  const [drafts, setDrafts] = useState({}); // channel -> 편집 중인 note (GENERAL_NOTE_KEY 포함)
   const [status, setStatus] = useState({}); // channel -> { min, max, count }
   const [loading, setLoading] = useState(true);
   const [copiedChannel, setCopiedChannel] = useState(null);
@@ -106,7 +111,7 @@ export default function BroadcastChannelNotes({ showToast }) {
     });
     setChannels(uniq);
 
-    const { data: noteRows } = await supabase.from('tvdb_channel_notes').select('channel, note').in('channel', uniq);
+    const { data: noteRows } = await supabase.from('tvdb_channel_notes').select('channel, note').in('channel', [...uniq, GENERAL_NOTE_KEY]);
     const map = {};
     (noteRows || []).forEach(r => { map[r.channel] = r.note || ''; });
     setNotes(map);
@@ -121,7 +126,7 @@ export default function BroadcastChannelNotes({ showToast }) {
     }, { onConflict: 'channel' });
     if (error) { showToast?.('❌ 메모 저장 실패: ' + error.message); return; }
     setNotes(prev => ({ ...prev, [channel]: value }));
-    showToast?.(`✅ [${channel}] 메모 저장 완료`);
+    showToast?.(channel === GENERAL_NOTE_KEY ? '✅ 전체 작업 메모 저장 완료' : `✅ [${channel}] 메모 저장 완료`);
   }
 
   // 저장된 메모 원문이 아니라, 크롬클로드나 클로드에게 바로 붙여넣을 수 있는 실행 지침 문장을 복사한다.
@@ -137,6 +142,8 @@ export default function BroadcastChannelNotes({ showToast }) {
     }
   }
 
+  const generalDirty = (drafts[GENERAL_NOTE_KEY] || '') !== (notes[GENERAL_NOTE_KEY] || '');
+
   return (
     <div style={S.card}>
       <div style={S.cardTitle}>📝 채널별 메모</div>
@@ -146,7 +153,34 @@ export default function BroadcastChannelNotes({ showToast }) {
         📋 버튼을 누르면 "마지막 수집일 다음날부터 이번 주 일요일까지" 조사해달라는 요청 문장이 복사됩니다 —
         🟡 채널은 크롬클로드 채팅창에, 그 외엔 클로드(이 관리자 밖 대화창)에 그대로 붙여넣으면 됩니다.
       </p>
-      {loading ? <p>불러오는 중...</p> : channels.length === 0 ? <p style={{ color: '#8aaa8a' }}>채널 데이터가 없습니다.</p> : (
+
+      {loading ? <p>불러오는 중...</p> : (
+        <div style={{ ...S.row, marginBottom: 16, border: '1.5px solid #16a34a', background: '#f0fdf4' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4, gap: 4 }}>
+            <span style={{ fontWeight: 700 }}>📌 전체 작업 메모</span>
+          </div>
+          <div style={{ fontSize: 12, color: '#8aaa8a', marginBottom: 8 }}>
+            특정 채널이 아니라 일반방송 수집 작업 전체에 걸친 메모(공통 주의사항, 진행 상황 등)를 적어두는 자리입니다. 정렬과 무관하게 항상 맨 위에 고정됩니다.
+          </div>
+          <textarea
+            rows={3}
+            value={drafts[GENERAL_NOTE_KEY] || ''}
+            onChange={e => setDrafts(prev => ({ ...prev, [GENERAL_NOTE_KEY]: e.target.value }))}
+            style={S.textarea}
+            placeholder="예: 매주 일요일까지 채워두는 게 목표"
+          />
+          <button
+            type="button"
+            onClick={() => saveNote(GENERAL_NOTE_KEY)}
+            disabled={!generalDirty}
+            style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12, marginTop: 8, opacity: generalDirty ? 1 : 0.5 }}
+          >
+            메모 저장
+          </button>
+        </div>
+      )}
+
+      {loading ? null : channels.length === 0 ? <p style={{ color: '#8aaa8a' }}>채널 데이터가 없습니다.</p> : (
         channels.map(channel => {
           const tag = parseTag(notes[channel]);
           const dirty = (drafts[channel] || '') !== (notes[channel] || '');
