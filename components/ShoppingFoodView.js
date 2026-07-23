@@ -70,26 +70,91 @@ function TabButton({ label, stats, active, onClick }) {
   );
 }
 
-// 같은 상품이 여러 채널·날짜에 걸쳐 반복 편성되는 게 보통이라(=잘 팔린다는 신호),
-// 행을 그대로 나열하지 않고 상품명 기준으로 묶어서 "몇 개 채널에서 몇 번 팔렸는지"만 보여준다.
-// 방송 횟수 많은 순으로 정렬 — 그게 "잘 팔리는" 신호 그 자체라서.
-function aggregateByProduct(rows) {
-  const map = new Map();
-  for (const r of rows) {
-    let e = map.get(r.product_name);
-    if (!e) {
-      e = { product_name: r.product_name, channels: new Set(), count: 0, last: r.broadcast_date, rows: [] };
-      map.set(r.product_name, e);
-    }
-    e.channels.add(r.channel);
-    e.count += 1;
-    e.rows.push(r);
-    if (r.broadcast_date > e.last) e.last = r.broadcast_date;
-  }
-  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+// 같은 상품이 수량/구성만 바꿔서 여러 상품명으로 편성되는 경우가 많다
+// (예: "...유산균(3박스)" / "...유산균(6박스)" / "...유산균 9박스 + 플러스 60포").
+// product_name이 완전히 똑같은 것만 묶으면 이런 변형이 전부 별개 상품으로 갈라져
+// 목록이 중복투성이로 보인다. 그래서 수량/구성을 나타내는 흔한 패턴(박스/주분/개월분/포/병/팩/
+// 세트/정/캡슐/입 등 + 숫자, 맨 앞 대괄호 태그, "+ 플러스 N포" 식 추가구성)을 떼어낸 "기준명"으로
+// 다시 한 번 묶는다. 기준명이 우연히 같아지는 경우를 빼면, 실제로 성분·용량이 달라 숫자 뒤에
+// 이 단위들이 안 붙는 경우(예: "2000IU")는 기준명이 달라져 잘못 합쳐지지 않는다.
+const QTY_UNIT = '(?:박스|주분|개월분|개월|포|병|팩|세트|입|개|캡슐|정|스틱|알|매)';
+const QTY_TOKEN = new RegExp(`\\(?\\s*\\d+\\s*${QTY_UNIT}\\s*\\)?`, 'g');
+const PLUS_TOKEN = new RegExp(`\\+\\s*(?:플러스)?\\s*\\d*\\s*${QTY_UNIT}?`, 'g');
+const BRACKET_PREFIX = /^(\[[^\]]{1,14}\]\s*)+/;
+
+function baseName(name) {
+  let s = name.replace(BRACKET_PREFIX, '');
+  s = s.replace(PLUS_TOKEN, '');
+  s = s.replace(QTY_TOKEN, '');
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  return s || name.trim();
 }
 
-// 상품명 클릭 시 언제·어디서 방송했는지 전체 내역을 보여주는 모달
+// 상품명에서 기준명을 뺀 나머지(=수량/구성 차이)를 옵션 뱃지 라벨로 쓴다.
+// 기준명이 안에 없으면(단어 순서가 달라 못 찾은 경우) 원래 상품명을 그대로 라벨로 쓴다.
+function variantLabel(name, base) {
+  const bracketMatch = name.match(BRACKET_PREFIX);
+  const bracketPart = bracketMatch ? bracketMatch[0].trim() : '';
+  let rest = name.replace(BRACKET_PREFIX, '');
+  const idx = rest.indexOf(base);
+  if (base && idx >= 0) {
+    rest = rest.slice(0, idx) + rest.slice(idx + base.length);
+  } else {
+    return name;
+  }
+  rest = rest.replace(/^[\s()·,+-]+|[\s()·,+-]+$/g, '').trim();
+  const label = [bracketPart, rest].filter(Boolean).join(' ').trim();
+  return label || name;
+}
+
+// 1) product_name이 완전히 같은 것끼리 먼저 묶고(변형 단위),
+// 2) 그 변형들을 baseName 기준으로 다시 묶어 하나의 상품 행으로 합친다.
+// 변형이 하나뿐이면(=수량 차이로 갈라진 다른 행이 없으면) 원래 상품명을 그대로 보여주고,
+// 여러 개면 기준명 + 옵션 뱃지(수량별 방송횟수)로 보여준다.
+// 방송 횟수 많은 순으로 정렬 — 그게 "잘 팔리는" 신호 그 자체라서.
+function aggregateByProduct(rows) {
+  const variantMap = new Map();
+  for (const r of rows) {
+    let v = variantMap.get(r.product_name);
+    if (!v) {
+      v = { product_name: r.product_name, channels: new Set(), count: 0, last: r.broadcast_date, rows: [] };
+      variantMap.set(r.product_name, v);
+    }
+    v.channels.add(r.channel);
+    v.count += 1;
+    v.rows.push(r);
+    if (r.broadcast_date > v.last) v.last = r.broadcast_date;
+  }
+
+  const groups = new Map();
+  for (const v of variantMap.values()) {
+    const base = baseName(v.product_name);
+    let g = groups.get(base);
+    if (!g) {
+      g = { base, channels: new Set(), count: 0, last: v.last, variants: [] };
+      groups.set(base, g);
+    }
+    for (const ch of v.channels) g.channels.add(ch);
+    g.count += v.count;
+    if (v.last > g.last) g.last = v.last;
+    g.variants.push({
+      label: variantLabel(v.product_name, base),
+      product_name: v.product_name,
+      count: v.count,
+      last: v.last,
+      rows: v.rows,
+    });
+  }
+
+  for (const g of groups.values()) {
+    g.variants.sort((a, b) => b.count - a.count);
+  }
+
+  return Array.from(groups.values()).sort((a, b) => b.count - a.count);
+}
+
+// 상품명 클릭 시 언제·어디서 방송했는지 전체 내역을 보여주는 모달.
+// 옵션(수량)이 여러 개로 묶인 상품이면 각 방송 행이 어떤 옵션이었는지 열을 하나 더 보여준다.
 function DetailModal({ item, onClose }) {
   if (!item) return null;
   const sorted = [...item.rows].sort((a, b) => {
@@ -119,6 +184,7 @@ function DetailModal({ item, onClose }) {
               <th style={{ padding: '4px 6px', fontWeight: 600 }}>날짜</th>
               <th style={{ padding: '4px 6px', fontWeight: 600 }}>시간</th>
               <th style={{ padding: '4px 6px', fontWeight: 600 }}>채널</th>
+              {item.showVariantColumn && <th style={{ padding: '4px 6px', fontWeight: 600 }}>옵션</th>}
               <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>가격</th>
             </tr>
           </thead>
@@ -128,6 +194,9 @@ function DetailModal({ item, onClose }) {
                 <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>{mdKo(row.broadcast_date)}</td>
                 <td style={{ padding: '4px 6px', whiteSpace: 'nowrap', color: '#888' }}>{row.time_start?.slice(0, 5) || ''}</td>
                 <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>{row.channel}</td>
+                {item.showVariantColumn && (
+                  <td style={{ padding: '4px 6px', color: '#888', whiteSpace: 'nowrap' }}>{row._variantLabel}</td>
+                )}
                 <td style={{ padding: '4px 6px', textAlign: 'right', color: '#888', whiteSpace: 'nowrap' }}>{row.price || ''}</td>
               </tr>
             ))}
@@ -154,22 +223,47 @@ function AggregatedTable({ rows }) {
           </tr>
         </thead>
         <tbody>
-          {items.map(item => (
-            <tr key={item.product_name} onClick={() => setSelected(item)} style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}>
-              <td style={{ padding: '3px 6px' }}>
-                {item.product_name}
-                {item.last === today && (
-                  <span style={{
-                    marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: '#e63946',
-                    borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle',
-                  }}>오늘</span>
-                )}
-              </td>
-              <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.channels.size}</td>
-              <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.count}</td>
-              <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888', whiteSpace: 'nowrap' }}>{mdKo(item.last)}</td>
-            </tr>
-          ))}
+          {items.map(item => {
+            const hasVariants = item.variants.length > 1;
+            const displayName = hasVariants ? item.base : item.variants[0].product_name;
+            const flatRows = item.variants.flatMap(v => v.rows.map(r => ({ ...r, _variantLabel: v.label })));
+            return (
+              <tr
+                key={item.base}
+                onClick={() => setSelected({
+                  product_name: displayName,
+                  channels: item.channels,
+                  count: item.count,
+                  rows: flatRows,
+                  showVariantColumn: hasVariants,
+                })}
+                style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
+              >
+                <td style={{ padding: '3px 6px' }}>
+                  {displayName}
+                  {item.last === today && (
+                    <span style={{
+                      marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: '#e63946',
+                      borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle',
+                    }}>오늘</span>
+                  )}
+                  {hasVariants && (
+                    <div style={{ marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {item.variants.map(v => (
+                        <span key={v.product_name} style={{
+                          fontSize: 10.5, color: '#555', background: '#eee', borderRadius: 4, padding: '1px 6px',
+                          whiteSpace: 'nowrap',
+                        }}>{v.label} · {v.count}</span>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.channels.size}</td>
+                <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.count}</td>
+                <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888', whiteSpace: 'nowrap' }}>{mdKo(item.last)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       <DetailModal item={selected} onClose={() => setSelected(null)} />

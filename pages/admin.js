@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
@@ -6,6 +7,7 @@ import BroadcastPanel from '../components/admin/BroadcastPanel';
 import ShoppingPanel from '../components/admin/ShoppingPanel';
 import CoupangPanel from '../components/admin/CoupangPanel';
 import AdsensePanel from '../components/admin/AdsensePanel';
+import UpdateNeededPopup from '../components/admin/UpdateNeededPopup';
 import { S, Toast } from '../components/admin/AdminUI';
 
 function LoginScreen({ onLogin }) {
@@ -65,9 +67,9 @@ export default function Admin() {
     if (VALID_TABS.includes(q)) setActiveTab(q);
   }, [router.isReady, router.query.tab]);
 
-  function navTo(tabId) {
+  function navTo(tabId, extraQuery) {
     setActiveTab(tabId);
-    router.replace({ pathname: '/admin', query: { tab: tabId } }, undefined, { shallow: true });
+    router.replace({ pathname: '/admin', query: { tab: tabId, ...extraQuery } }, undefined, { shallow: true });
   }
 
   const handleLogout = () => {
@@ -92,6 +94,7 @@ export default function Admin() {
           </div>
         </main>
       </div>
+      <UpdateNeededPopup onNavigate={(tabId) => navTo(tabId, { view: 'notes' })} />
       <Toast msg={toast} />
     </>
   );

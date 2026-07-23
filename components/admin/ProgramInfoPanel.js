@@ -54,7 +54,14 @@ export default function ProgramInfoPanel({ showToast }) {
       }
     });
 
-    const list = Object.values(byChannel).sort((a, b) => {
+    // 일반방송(tv) 채널의 등록된 프로그램 목록은 원래 DB 조회 순서 그대로 쌓여서
+    // 뒤죽박죽으로 보였다 — 가나다순으로 다시 정렬해서 보여준다.
+    const list = Object.values(byChannel).map(g => {
+      if (g.source === 'tv') {
+        g.registered = [...g.registered].sort((a, b) => a.program_name.localeCompare(b.program_name, 'ko'));
+      }
+      return g;
+    }).sort((a, b) => {
       if (a.source !== b.source) return a.source === 'tv' ? -1 : 1;
       return a.channel.localeCompare(b.channel, 'ko');
     });
