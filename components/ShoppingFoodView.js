@@ -246,7 +246,7 @@ function AggregatedTable({ rows }) {
                 })}
                 style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
               >
-                <td style={{ padding: '3px 6px' }}>
+                <td style={{ padding: '3px 6px', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {displayName}
                   {item.last === today && (
                     <span style={{
@@ -255,14 +255,9 @@ function AggregatedTable({ rows }) {
                     }}>오늘</span>
                   )}
                   {hasVariants && (
-                    <div style={{ marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {item.variants.map(v => (
-                        <span key={v.product_name} style={{
-                          fontSize: 10.5, color: '#555', background: '#eee', borderRadius: 4, padding: '1px 6px',
-                          whiteSpace: 'nowrap',
-                        }}>{v.label} · {v.count}</span>
-                      ))}
-                    </div>
+                    <span style={{
+                      marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap',
+                    }}>옵션 {item.variants.length}개</span>
                   )}
                 </td>
                 <td style={{ padding: '3px 6px', textAlign: 'right', color: '#888' }}>{item.channels.size}</td>
