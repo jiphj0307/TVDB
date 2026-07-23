@@ -48,6 +48,17 @@ function ReplayBadge({ hasReplay }) {
   );
 }
 
+// 건강·생활·먹거리 블로그 소스로 쓸 프로그램만 사람이 확인해서 표시한 값. false/null이면 뱃지 안 띄움.
+function HealthBadge({ isHealth }) {
+  if (!isHealth) return null;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '1px 6px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+      marginLeft: 6, background: '#fef3c7', color: '#b45309',
+    }}>🥗 건강·생활·먹거리</span>
+  );
+}
+
 export default function Program() {
   const router = useRouter();
   const routerReady = router.isReady;
@@ -73,7 +84,7 @@ export default function Program() {
 
   // 정규 요일/시간은 날짜와 무관하게 항상 같으니 최초 1회만 불러온다.
   useEffect(() => {
-    supabase.from('tvdb_program_info').select('program_name, channel, air_day, air_time, is_airing, has_replay, replay_url')
+    supabase.from('tvdb_program_info').select('program_name, channel, air_day, air_time, is_airing, has_replay, replay_url, is_health_content')
       .then(({ data }) => setInfoRows(data || []));
   }, []);
 
@@ -257,6 +268,7 @@ export default function Program() {
                         <ReplayBadge hasReplay={info.has_replay} />
                       )
                     )}
+                    {info && <HealthBadge isHealth={info.is_health_content} />}
                   </td>
                   <td style={{ padding: '6px' }}>{r.genre}</td>
                   <td style={{ padding: '6px', color: '#888', fontSize: 12.5 }}>

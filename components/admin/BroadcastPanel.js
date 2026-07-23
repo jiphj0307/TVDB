@@ -42,6 +42,20 @@ function ReplayBadge({ hasReplay }) {
   );
 }
 
+// is_health_content: 블로그 소스로 쓸 "건강·생활·먹거리" 계열 프로그램만 공식 프로그램 소개를 보고
+// 사람이 판단해 표시한 값(2026-07-24). null이면 아직 분류 안 한 것 — 확인도 안 하고 "아니오"로
+// 단정하지 않는다는 원칙은 ReplayBadge와 동일.
+function HealthBadge({ isHealth }) {
+  if (isHealth === null || isHealth === undefined) return null;
+  if (!isHealth) return null;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+      background: '#fef3c7', color: '#b45309',
+    }}>🥗 건강·생활·먹거리</span>
+  );
+}
+
 // "수정" 버튼을 눌렀을 때 맨 위 등록 폼으로 스크롤시키던 방식은, 목록 깊숙이 스크롤해서 보고 있던
 // 사용자 입장에선 "여기서 바로 안 되고 왜 위로 튕기지?"로 느껴진다. 그 자리에서 바로 편집할 수 있게
 // 같은 필드 구성의 모달로 뺐다.
@@ -116,10 +130,15 @@ function EditModal({ form, setForm, onSave, onCancel, saving }) {
             <input placeholder="https://... (VOD/다시보기 페이지)" value={form.replay_url}
               onChange={e => setForm(f => ({ ...f, replay_url: e.target.value }))} style={S.input} />
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#4b6e4b' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: '#4b6e4b' }}>
             <input type="checkbox" checked={form.verified}
               onChange={e => setForm(f => ({ ...f, verified: e.target.checked }))} />
             출처로 확인됨 (체크 해제 시 "확인 안 됨"으로 표시)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#4b6e4b' }}>
+            <input type="checkbox" checked={!!form.is_health_content}
+              onChange={e => setForm(f => ({ ...f, is_health_content: e.target.checked }))} />
+            🥗 건강·생활·먹거리 콘텐츠(블로그 소스로 활용)
           </label>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="submit" disabled={saving} style={{ ...S.btn(), opacity: saving ? 0.6 : 1 }}>
@@ -259,6 +278,7 @@ export default function BroadcastPanel({ showToast }) {
       is_airing: row.is_airing !== false,
       broadcast_memo: row.broadcast_memo || '',
       replay_url: row.replay_url || '',
+      is_health_content: !!row.is_health_content,
     });
   }
 
@@ -303,6 +323,7 @@ export default function BroadcastPanel({ showToast }) {
       is_airing: !!editForm.is_airing,
       broadcast_memo: editForm.broadcast_memo.trim() || null,
       replay_url: editForm.replay_url.trim() || null,
+      is_health_content: !!editForm.is_health_content,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'program_name' });
     setEditSaving(false);
@@ -404,7 +425,10 @@ export default function BroadcastPanel({ showToast }) {
                         return (
                         <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
                           <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
-                          <td style={{ padding: '4px 6px' }}>{row.program_name}</td>
+                          <td style={{ padding: '4px 6px' }}>
+                            {row.program_name}
+                            {info?.is_health_content && <span style={{ marginLeft: 6 }}><HealthBadge isHealth={info.is_health_content} /></span>}
+                          </td>
                           <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.genre}</td>
                           <td style={{ padding: '4px 6px', color: '#8aaa8a', fontSize: 12 }}>
                             {info ? [info.air_day, info.air_time].filter(Boolean).join(' ') || '-' : ''}
@@ -491,10 +515,15 @@ export default function BroadcastPanel({ showToast }) {
                     <input placeholder="https://... (VOD/다시보기 페이지)" value={form.replay_url}
                       onChange={e => setForm(f => ({ ...f, replay_url: e.target.value }))} style={S.input} />
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#4b6e4b' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: '#4b6e4b' }}>
                     <input type="checkbox" checked={form.verified}
                       onChange={e => setForm(f => ({ ...f, verified: e.target.checked }))} />
                     출처로 확인됨 (체크 해제 시 "확인 안 됨"으로 표시)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#4b6e4b' }}>
+                    <input type="checkbox" checked={!!form.is_health_content}
+                      onChange={e => setForm(f => ({ ...f, is_health_content: e.target.checked }))} />
+                    🥗 건강·생활·먹거리 콘텐츠(블로그 소스로 활용)
                   </label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="submit" disabled={saving} style={{ ...S.btn(), opacity: saving ? 0.6 : 1 }}>
@@ -534,15 +563,15 @@ export default function BroadcastPanel({ showToast }) {
                       <tr key={row.program_name} style={{ borderBottom: '1px solid #eef6ee' }}>
                         <td style={{ padding: 6 }}>
                           {row.program_name}
-                          {row.has_replay !== null && row.has_replay !== undefined && (
-                            row.replay_url ? (
-                              <a href={row.replay_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6, textDecoration: 'none' }}>
-                                <ReplayBadge hasReplay={row.has_replay} />
-                              </a>
-                            ) : (
-                              <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
-                            )
+                          {row.has_replay === true && row.replay_url && (
+                            <a href={row.replay_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6, textDecoration: 'none' }}>
+                              <ReplayBadge hasReplay={row.has_replay} />
+                            </a>
                           )}
+                          {row.has_replay === false && (
+                            <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
+                          )}
+                          {row.is_health_content && <span style={{ marginLeft: 6 }}><HealthBadge isHealth={row.is_health_content} /></span>}
                         </td>
                         <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_day}</td>
                         <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_time}</td>
