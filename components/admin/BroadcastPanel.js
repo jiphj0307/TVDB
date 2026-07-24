@@ -1,4 +1,5 @@
 
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
@@ -317,8 +318,14 @@ export default function BroadcastPanel({ showToast }) {
     setEpisodeCounts(counts);
 
     setSchedule(sched || []);
-    // 등록된 프로그램 목록은 원래 DB 조회 순서 그대로 쌓여서 뒤죽박죽으로 보였다 — 가나다순으로 정렬.
-    setInfoRows([...(info || [])].sort((a, b) => a.program_name.localeCompare(b.program_name, 'ko')));
+    // 등록된 프로그램 목록은 원래 DB 조회 순서 그대로 쌓여서 뒤죽박죽으로 보였다 — 방송중(is_airing)
+    // 인 것을 먼저, 종영은 뒤로 보내고 각 그룹 안에서는 가나다순으로 정렬(모든 채널 공통 적용).
+    setInfoRows([...(info || [])].sort((a, b) => {
+      const aAiring = a.is_airing !== false;
+      const bAiring = b.is_airing !== false;
+      if (aAiring !== bAiring) return aAiring ? -1 : 1;
+      return a.program_name.localeCompare(b.program_name, 'ko');
+    }));
     setNote(noteRow?.note || '');
     setSavedNote(noteRow?.note || '');
 
