@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
@@ -233,7 +234,12 @@ export default function BroadcastPanel({ showToast }) {
   // program_name -> { count, latestDate }. "회차 보기"는 실제로 회차가 입력된 프로그램에만 노출한다.
   const [episodeCounts, setEpisodeCounts] = useState({});
 
-  useEffect(() => { loadChannels(); }, []);
+  // 채널 목록 로딩은 URL의 ?channel= 값을 읽어서 초기 선택 채널을 복원해야 하는데,
+  // router.isReady가 false인 상태(새로고침 직후)에서 router.query는 항상 빈 객체({})다.
+  // 예전엔 [] 의존성으로 마운트 즉시 실행해서 그 빈 객체를 읽어버렸고, 그 결과 URL에 채널이
+  // 뭐가 들어있든 항상 정렬 1순위 채널(채널A)로 초기화된 뒤 그 값으로 URL을 덮어써버렸다.
+  // (아래 탭 복원 useEffect와 동일하게 router.isReady를 기다리도록 맞춘다.)
+  useEffect(() => { if (router.isReady) loadChannels(); }, [router.isReady]);
   useEffect(() => { if (activeChannel) loadChannelData(activeChannel); }, [activeChannel]);
 
   // 새로고침해도 어느 탭(수집현황/채널별편성표/채널별메모)에 있었는지 유지
