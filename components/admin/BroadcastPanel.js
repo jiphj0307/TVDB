@@ -209,6 +209,31 @@ function EpisodeModal({ programName, episodes, onClose, onToggle }) {
   );
 }
 
+// 삭제는 되돌릴 수 없으니 버튼 클릭 즉시 지우지 않고 이 모달로 한 번 더 확인시킨다.
+function ConfirmModal({ confirm, onConfirm, onCancel, busy }) {
+  if (!confirm) return null;
+  return (
+    <div onClick={onCancel} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 420, width: '100%',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>정말 삭제할까요?</div>
+        <p style={{ fontSize: 13, color: '#4b6e4b', marginBottom: 16 }}>{confirm.message}</p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onConfirm} disabled={busy} style={{ ...S.btn('#dc2626'), opacity: busy ? 0.6 : 1 }}>
+            {busy ? '삭제 중...' : '삭제'}
+          </button>
+          <button type="button" onClick={onCancel} style={S.btnGhost}>취소</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BroadcastPanel({ showToast }) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState('status'); // 'status' | 'channel' | 'notes'
@@ -218,6 +243,7 @@ export default function BroadcastPanel({ showToast }) {
   const [schedule, setSchedule] = useState([]); // 선택 채널의 최근 7일 편성
   const [infoRows, setInfoRows] = useState([]); // 선택 채널의 등록된 프로그램 정보
   const [missing, setMissing] = useState([]);
+  const [ignored, setIgnored] = useState([]); // 이 채널에서 "미등록"에서 숨기기로 한 프로그램명 목록
   const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('');
   const [form, setForm] = useState(emptyForm);
@@ -227,6 +253,10 @@ export default function BroadcastPanel({ showToast }) {
   // 기존 항목 "수정"은 이 상태로 뜨는 모달에서 처리한다(위 form/handleSubmit은 신규 등록 전용).
   const [editForm, setEditForm] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
+
+  // 삭제 확인 모달 상태. { type: 'missing' | 'registered', name } | null
+  const [confirm, setConfirm] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   // 건강·생활·먹거리 프로그램의 회차별 내용 + "사용" 체크박스(블로그 소재 고르기용).
   // program_name -> episode 배열. 모달을 열 때만 불러온다(전부 미리 불러오면 느려짐).
@@ -297,13 +327,14 @@ export default function BroadcastPanel({ showToast }) {
     weekAgo.setDate(weekAgo.getDate() - 6);
     const fromDate = weekAgo.toISOString().slice(0, 10);
 
-    const [{ data: sched }, { data: info }, { data: noteRow }, { data: epRows }] = await Promise.all([
+    const [{ data: sched }, { data: info }, { data: noteRow }, { data: epRows }, { data: ignoreRows }] = await Promise.all([
       supabase.from('tvdb_program').select('id, broadcast_date, time_start, program_name, genre')
         .eq('channel', channel).gte('broadcast_date', fromDate)
         .order('broadcast_date', { ascending: true }).order('time_start', { ascending: true }),
       supabase.from('tvdb_program_info').select('*').eq('channel', channel),
       supabase.from('tvdb_channel_notes').select('*').eq('channel', channel).maybeSingle(),
       supabase.from('tvdb_program_episodes').select('program_name, air_date').eq('channel', channel),
+      supabase.from('tvdb_program_ignore').select('program_name').eq('channel', channel),
     ]);
 
     // 회차 데이터가 실제로 입력된 프로그램만 "회차 보기"를 노출하기 위한 프로그램별 집계
@@ -329,10 +360,13 @@ export default function BroadcastPanel({ showToast }) {
     setNote(noteRow?.note || '');
     setSavedNote(noteRow?.note || '');
 
+    const ignoreSet = new Set((ignoreRows || []).map(r => r.program_name));
+    setIgnored(Array.from(ignoreSet));
+
     const seen = new Set();
     const miss = [];
     (sched || []).forEach(p => {
-      if (seen.has(p.program_name)) return;
+      if (seen.has(p.program_name) || ignoreSet.has(p.program_name)) return;
       const matched = (info || []).some(i => p.program_name.startsWith(i.program_name));
       if (!matched) { seen.add(p.program_name); miss.push(p.program_name); }
     });
@@ -370,6 +404,41 @@ export default function BroadcastPanel({ showToast }) {
       replay_url: row.replay_url || '',
       is_health_content: !!row.is_health_content,
     });
+  }
+
+  function askDeleteMissing(name) {
+    setConfirm({
+      type: 'missing', name,
+      message: `"${name}"을(를) ${activeChannel} 미등록 목록에서 숨깁니다. 실제 편성기록은 그대로 남고, 이 목록에만 다시 안 나타납니다.`,
+    });
+  }
+
+  function askDeleteRegistered(name) {
+    setConfirm({
+      type: 'registered', name,
+      message: `"${name}" 등록 정보를 완전히 삭제합니다. 요일/시간/장르/방영상태 등 등록해둔 정보가 전부 사라집니다.`,
+    });
+  }
+
+  async function handleConfirmDelete() {
+    if (!confirm) return;
+    setConfirmBusy(true);
+    if (confirm.type === 'missing') {
+      const { error } = await supabase.from('tvdb_program_ignore').insert({
+        channel: activeChannel, program_name: confirm.name,
+      });
+      setConfirmBusy(false);
+      if (error) { showToast('❌ 처리 실패: ' + error.message); return; }
+      showToast(`✅ "${confirm.name}" 미등록 목록에서 숨김`);
+    } else {
+      const { error } = await supabase.from('tvdb_program_info').delete()
+        .eq('channel', activeChannel).eq('program_name', confirm.name);
+      setConfirmBusy(false);
+      if (error) { showToast('❌ 삭제 실패: ' + error.message); return; }
+      showToast(`✅ "${confirm.name}" 삭제 완료`);
+    }
+    setConfirm(null);
+    loadChannelData(activeChannel);
   }
 
   async function handleSubmit(e) {
@@ -655,10 +724,24 @@ export default function BroadcastPanel({ showToast }) {
                 <div style={S.cardTitle}>❓ {activeChannel} 미등록 프로그램 ({missing.length}개)</div>
                 <div style={{ maxHeight: 240, overflowY: 'auto' }}>
                   {missing.map((name, idx) => (
-                    <div key={idx} onClick={() => startNewFromMissing(name)} style={{ ...S.row, cursor: 'pointer' }}>{name}</div>
+                    <div key={idx} onClick={() => startNewFromMissing(name)} style={{
+                      ...S.row, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                    }}>
+                      <span>{name}</span>
+                      <button onClick={e => { e.stopPropagation(); askDeleteMissing(name); }}
+                        title="미등록 목록에서 숨기기"
+                        style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, color: '#dc2626', borderColor: '#fecaca', flexShrink: 0 }}>
+                        삭제
+                      </button>
+                    </div>
                   ))}
                   {missing.length === 0 && <p style={{ color: '#8aaa8a' }}>없음</p>}
                 </div>
+                {ignored.length > 0 && (
+                  <p style={{ fontSize: 11.5, color: '#8aaa8a', marginTop: 10, marginBottom: 0 }}>
+                    숨긴 항목 {ignored.length}개: {ignored.join(', ')}
+                  </p>
+                )}
               </div>
 
               <div style={S.card}>
@@ -697,6 +780,10 @@ export default function BroadcastPanel({ showToast }) {
                         <td style={{ padding: 6 }}>{row.verified ? '✅' : '❌'}</td>
                         <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
                           <button onClick={() => startEdit(row)} style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12 }}>수정</button>
+                          <button onClick={() => askDeleteRegistered(row.program_name)}
+                            style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 4, color: '#dc2626', borderColor: '#fecaca' }}>
+                            삭제
+                          </button>
                           {row.is_health_content && episodeCounts[row.program_name] && (
                             <button onClick={() => toggleEpisodes(row.program_name)}
                               style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 4 }}>
@@ -717,6 +804,7 @@ export default function BroadcastPanel({ showToast }) {
       <EditModal form={editForm} setForm={setEditForm} onSave={handleEditSubmit} onCancel={() => setEditForm(null)} saving={editSaving} />
       <EpisodeModal programName={expandedProgram} episodes={episodes[expandedProgram]}
         onClose={() => setExpandedProgram(null)} onToggle={(ep) => toggleEpisodeSelected(expandedProgram, ep)} />
+      <ConfirmModal confirm={confirm} onConfirm={handleConfirmDelete} onCancel={() => setConfirm(null)} busy={confirmBusy} />
     </div>
   );
 }
