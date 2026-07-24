@@ -762,16 +762,24 @@ export default function BroadcastPanel({ showToast }) {
                     {infoRows.map(row => (
                       <tr key={row.program_name} style={{ borderBottom: '1px solid #eef6ee' }}>
                         <td style={{ padding: 6 }}>
-                          {row.program_name}
-                          {row.has_replay === true && row.replay_url && (
-                            <a href={row.replay_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6, textDecoration: 'none' }}>
-                              <ReplayBadge hasReplay={row.has_replay} />
-                            </a>
+                          <div>
+                            {row.program_name}
+                            {row.has_replay === true && row.replay_url && (
+                              <a href={row.replay_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6, textDecoration: 'none' }}>
+                                <ReplayBadge hasReplay={row.has_replay} />
+                              </a>
+                            )}
+                            {row.has_replay === false && (
+                              <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
+                            )}
+                            {row.is_health_content && <span style={{ marginLeft: 6 }}><HealthBadge isHealth={row.is_health_content} /></span>}
+                          </div>
+                          {row.is_health_content && episodeCounts[row.program_name] && (
+                            <button onClick={() => toggleEpisodes(row.program_name)}
+                              style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginTop: 4 }}>
+                              회차 보기 ({episodeCounts[row.program_name].count}회 · {episodeCounts[row.program_name].latestDate})
+                            </button>
                           )}
-                          {row.has_replay === false && (
-                            <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
-                          )}
-                          {row.is_health_content && <span style={{ marginLeft: 6 }}><HealthBadge isHealth={row.is_health_content} /></span>}
                         </td>
                         <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_day}</td>
                         <td style={{ padding: 6, color: '#4b6e4b' }}>{row.air_time}</td>
@@ -784,12 +792,6 @@ export default function BroadcastPanel({ showToast }) {
                             style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 4, color: '#dc2626', borderColor: '#fecaca' }}>
                             삭제
                           </button>
-                          {row.is_health_content && episodeCounts[row.program_name] && (
-                            <button onClick={() => toggleEpisodes(row.program_name)}
-                              style={{ ...S.btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 4 }}>
-                              회차 보기 ({episodeCounts[row.program_name].count}회 · {episodeCounts[row.program_name].latestDate})
-                            </button>
-                          )}
                         </td>
                       </tr>
                     ))}
