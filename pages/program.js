@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
@@ -224,10 +225,12 @@ export default function Program() {
             🔓 관리자 모드 — 체크박스로 색칠 직접 지정 가능
           </span>
         )}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666', marginLeft: 'auto' }}>
-          <span style={{ width: 12, height: 12, borderRadius: 3, background: '#fff3cd', border: '1px solid #f0d68a', display: 'inline-block' }} />
-          생활·건강 (어르신 시청 위주)
-        </span>
+        {isAdmin && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#666', marginLeft: 'auto' }}>
+            <span style={{ width: 12, height: 12, borderRadius: 3, background: '#fff3cd', border: '1px solid #f0d68a', display: 'inline-block' }} />
+            생활·건강 (어르신 시청 위주)
+          </span>
+        )}
       </div>
 
       {loading && <p>불러오는 중...</p>}
@@ -249,7 +252,7 @@ export default function Program() {
             {filtered.map(r => {
               const info = findInfo(infoRows, r);
               return (
-                <tr key={r.id} style={{ borderBottom: '1px solid #eee', background: r.is_life_health_target ? '#fff3cd' : undefined }}>
+                <tr key={r.id} style={{ borderBottom: '1px solid #eee', background: (isAdmin && r.is_life_health_target) ? '#fff3cd' : undefined }}>
                   {isAdmin && (
                     <td style={{ padding: '6px' }}>
                       <input type="checkbox" checked={!!r.is_life_health_target} onChange={() => toggleTarget(r)} style={{ cursor: 'pointer' }} />
@@ -259,7 +262,7 @@ export default function Program() {
                   <td style={{ padding: '6px' }}>{r.channel}</td>
                   <td style={{ padding: '6px' }}>
                     {r.program_name}
-                    {info && (
+                    {isAdmin && info && (
                       info.replay_url ? (
                         <a href={info.replay_url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
                           <ReplayBadge hasReplay={info.has_replay} />
@@ -268,7 +271,7 @@ export default function Program() {
                         <ReplayBadge hasReplay={info.has_replay} />
                       )
                     )}
-                    {info && <HealthBadge isHealth={info.is_health_content} />}
+                    {isAdmin && info && <HealthBadge isHealth={info.is_health_content} />}
                   </td>
                   <td style={{ padding: '6px' }}>{r.genre}</td>
                   <td style={{ padding: '6px', color: '#888', fontSize: 12.5 }}>

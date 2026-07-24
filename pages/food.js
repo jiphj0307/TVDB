@@ -1,4 +1,7 @@
+
 import Head from 'next/head';
+import { useRouter } from 'next/router';
+import { useEffect, useState } from 'react';
 import { AdSlot } from '../components/AdSlot';
 import { useAdSlot } from '../lib/AdSlotsContext';
 import { Nav } from '../components/Nav';
@@ -13,10 +16,24 @@ export async function getStaticProps() {
 }
 
 export default function FoodPage({ tree }) {
+  const router = useRouter();
   const topSlot = useAdSlot('food_top');
   const bottomSlot = useAdSlot('food_bottom');
   const leftSlot = useAdSlot('food_left');
   const rightSlot = useAdSlot('food_right');
+
+  // 이 페이지는 admin.js 로그인 성공 시 저장되는 sessionStorage.tvdb_admin='1'인 사람만 볼 수 있다.
+  // getStaticProps는 서버에서 미리 렌더링되므로 sessionStorage를 여기서 못 읽어 클라이언트에서 체크한다.
+  const [checked, setChecked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    const ok = sessionStorage.getItem('tvdb_admin') === '1';
+    setIsAdmin(ok);
+    setChecked(true);
+    if (!ok) router.replace('/');
+  }, [router]);
+
+  if (!checked || !isAdmin) return null;
 
   return (
     <>
