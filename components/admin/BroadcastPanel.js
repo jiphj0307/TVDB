@@ -19,7 +19,7 @@ function mdKo(dateStr) {
 
 const emptyForm = {
   program_name: '', genre: '', description: '', source_url: '', verified: true,
-  air_day: '', air_time: '', is_airing: true, broadcast_memo: '', replay_url: '',
+  air_day: '', air_time: '', is_airing: true, broadcast_memo: '', replay_url: '', clip_urls: [],
 };
 
 function StatusBadge({ isAiring }) {
@@ -55,6 +55,39 @@ function HealthBadge({ isHealth }) {
       display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
       background: '#fef3c7', color: '#b45309',
     }}>🥗 건강·생활·먹거리</span>
+  );
+}
+
+// 다시보기 URL(전체 편성표/시리즈 랜딩 페이지)은 프로그램당 하나뿐이지만, 클립 링크는 회차가
+// 새로 쌓일 때마다("예고편+클립" 구조인 TV조선처럼) 계속 늘어날 수 있어서 배열로 관리한다.
+// 프레임 자동 캡처(ffmpeg) 기능이 이 배열을 순회하며 각 클립에서 필요한 장면을 뽑아낼 수 있도록
+// 만든 필드 — MemoImageModal의 "링크" 반복 입력 패턴과 동일하게 +/- 로 여러 개를 넣고 뺀다.
+function ClipUrlsField({ urls, onChange }) {
+  const list = urls || [];
+  function update(idx, value) {
+    onChange(list.map((u, i) => (i === idx ? value : u)));
+  }
+  function add() {
+    onChange([...list, '']);
+  }
+  function remove(idx) {
+    onChange(list.filter((_, i) => i !== idx));
+  }
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <label style={S.label}>클립 링크 (여러 개 가능)</label>
+      {list.map((url, idx) => (
+        <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          <input placeholder="https://... (예고편/클립 스트림 페이지)" value={url}
+            onChange={e => update(idx, e.target.value)} style={{ ...S.input, flex: 1 }} />
+          <button type="button" onClick={() => remove(idx)} title="이 클립 링크 삭제" style={{
+            flexShrink: 0, padding: '0 12px', borderRadius: 6, border: '1px solid #fecaca',
+            background: '#fff', color: '#dc2626', fontSize: 14, cursor: 'pointer',
+          }}>−</button>
+        </div>
+      ))}
+      <button type="button" onClick={add} style={{ ...S.btnGhost, padding: '4px 12px', fontSize: 12 }}>+ 클립 링크 추가</button>
+    </div>
   );
 }
 
@@ -132,6 +165,7 @@ function EditModal({ form, setForm, onSave, onCancel, saving }) {
             <input placeholder="https://... (VOD/다시보기 페이지)" value={form.replay_url}
               onChange={e => setForm(f => ({ ...f, replay_url: e.target.value }))} style={S.input} />
           </div>
+          <ClipUrlsField urls={form.clip_urls} onChange={urls => setForm(f => ({ ...f, clip_urls: urls }))} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: '#4b6e4b' }}>
             <input type="checkbox" checked={form.verified}
               onChange={e => setForm(f => ({ ...f, verified: e.target.checked }))} />
@@ -402,6 +436,7 @@ export default function BroadcastPanel({ showToast }) {
       is_airing: row.is_airing !== false,
       broadcast_memo: row.broadcast_memo || '',
       replay_url: row.replay_url || '',
+      clip_urls: row.clip_urls || [],
       is_health_content: !!row.is_health_content,
     });
   }
@@ -445,6 +480,7 @@ export default function BroadcastPanel({ showToast }) {
     e.preventDefault();
     if (!form.program_name.trim()) { showToast('❌ 프로그램명은 필수입니다'); return; }
     setSaving(true);
+    const cleanClipUrls = (form.clip_urls || []).map(u => u.trim()).filter(Boolean);
     const { error } = await supabase.from('tvdb_program_info').upsert({
       program_name: form.program_name.trim(),
       channel: activeChannel,
@@ -457,6 +493,7 @@ export default function BroadcastPanel({ showToast }) {
       is_airing: !!form.is_airing,
       broadcast_memo: form.broadcast_memo.trim() || null,
       replay_url: form.replay_url.trim() || null,
+      clip_urls: cleanClipUrls.length > 0 ? cleanClipUrls : null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'program_name' });
     setSaving(false);
@@ -470,6 +507,7 @@ export default function BroadcastPanel({ showToast }) {
     e.preventDefault();
     if (!editForm.program_name.trim()) { showToast('❌ 프로그램명은 필수입니다'); return; }
     setEditSaving(true);
+    const cleanClipUrls = (editForm.clip_urls || []).map(u => u.trim()).filter(Boolean);
     const { error } = await supabase.from('tvdb_program_info').upsert({
       program_name: editForm.program_name.trim(),
       channel: activeChannel,
@@ -482,6 +520,7 @@ export default function BroadcastPanel({ showToast }) {
       is_airing: !!editForm.is_airing,
       broadcast_memo: editForm.broadcast_memo.trim() || null,
       replay_url: editForm.replay_url.trim() || null,
+      clip_urls: cleanClipUrls.length > 0 ? cleanClipUrls : null,
       is_health_content: !!editForm.is_health_content,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'program_name' });
@@ -701,6 +740,7 @@ export default function BroadcastPanel({ showToast }) {
                     <input placeholder="https://... (VOD/다시보기 페이지)" value={form.replay_url}
                       onChange={e => setForm(f => ({ ...f, replay_url: e.target.value }))} style={S.input} />
                   </div>
+                  <ClipUrlsField urls={form.clip_urls} onChange={urls => setForm(f => ({ ...f, clip_urls: urls }))} />
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: '#4b6e4b' }}>
                     <input type="checkbox" checked={form.verified}
                       onChange={e => setForm(f => ({ ...f, verified: e.target.checked }))} />
@@ -773,6 +813,12 @@ export default function BroadcastPanel({ showToast }) {
                               <span style={{ marginLeft: 6 }}><ReplayBadge hasReplay={row.has_replay} /></span>
                             )}
                             {row.is_health_content && <span style={{ marginLeft: 6 }}><HealthBadge isHealth={row.is_health_content} /></span>}
+                            {row.clip_urls && row.clip_urls.length > 0 && (
+                              <span style={{
+                                marginLeft: 6, display: 'inline-block', padding: '2px 8px', borderRadius: 999,
+                                fontSize: 11, fontWeight: 700, background: '#ede9fe', color: '#7c3aed',
+                              }}>🎬 클립 {row.clip_urls.length}개</span>
+                            )}
                           </div>
                           {row.is_health_content && episodeCounts[row.program_name] && (
                             <button onClick={() => toggleEpisodes(row.program_name)}
