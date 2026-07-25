@@ -7,6 +7,7 @@ const LINKS = [
   { href: '/', label: '홈쇼핑 · 편성표' },
   { href: '/program', label: '📺 일반방송' },
   { href: '/food', label: '🍑 과일 · 건기식 · 식품', adminOnly: true },
+  { href: '/health', label: '🩺 건강 · 생활 · 먹거리', adminOnly: true },
 ];
 
 export function Nav() {
