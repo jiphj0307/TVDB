@@ -675,13 +675,6 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
             📝 {ep.memo}
           </div>
         )}
-        {ep.links && ep.links.length > 0 && (
-          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {ep.links.map((l, i) => (
-              <a key={i} href={l} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: '#2563eb', wordBreak: 'break-all' }}>🔗 {l}</a>
-            ))}
-          </div>
-        )}
       </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
         <StatusCheckbox checked={ep.blog_used} onChange={() => onToggleBlogUsed(ep)} label="블로그" />
@@ -692,10 +685,13 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {canWatch ? (
-            <a href={info.replay_url} target="_blank" rel="noreferrer" style={{ ...actionBtnStyle, borderColor: '#93c5fd', color: '#2563eb' }}>▶ 바로가기</a>
+            <a href={info.replay_url} target="_blank" rel="noreferrer" style={{ ...actionBtnStyle, borderColor: '#93c5fd', color: '#2563eb' }}>▶ 다시보기</a>
           ) : (
             <span style={{ ...actionBtnStyle, color: '#bbb', cursor: 'default' }}>다시보기 없음</span>
           )}
+          {ep.links && ep.links.map((l, i) => (
+            <a key={i} href={l} target="_blank" rel="noreferrer" style={{ ...actionBtnStyle, borderColor: '#c4b5fd', color: '#7c3aed' }}>🎬 클립{i + 1}</a>
+          ))}
           <button onClick={() => onEdit(ep)} style={actionBtnStyle}>분류수정</button>
           <button onClick={() => onEditMemo(ep)} style={actionBtnStyle}>📝 메모·이미지</button>
           <button onClick={() => onDelete(ep)} style={{ ...actionBtnStyle, borderColor: '#fecaca', color: '#dc2626' }}>삭제</button>
