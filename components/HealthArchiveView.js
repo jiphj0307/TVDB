@@ -230,36 +230,26 @@ function CategoryEditModal({ episode, onSave, onClose, busy }) {
   );
 }
 
-// 회차 하나에 자유 메모 + 링크 여러 개 + 이미지 한 장을 등록하는 모달. 이미지는 STORAGE_BUCKET
-// (공개 버킷)에 업로드하고 공개 URL만 tvdb_program_episodes.image_url에 저장한다(파일 자체는
-// DB가 아니라 Storage에 있음). 새 파일을 고르면 즉시 로컬 미리보기(URL.createObjectURL)만
-// 보여주고, 실제 업로드는 "저장"을 눌렀을 때 한 번에 한다 — 모달 열고 파일만 고른 채 닫으면
-// 업로드가 안 일어나야 하므로.
-// 링크는 "+"를 누를 때마다 입력칸이 하나씩 늘어나는 방식(개수 제한 없음, tvdb_program_episodes.
-// links text[] 배열에 그대로 저장) — 이미지와 달리 여러 개 등록 가능.
+// 회차 하나에 자유 메모 + 링크 여러 개 + 이미지 여러 장을 등록하는 모달. 이미지는 STORAGE_BUCKET
+// (공개 버킷)에 업로드하고 공개 URL 배열만 tvdb_program_episodes.image_urls에 저장한다(파일
+// 자체는 DB가 아니라 Storage에 있음). 기존에 저장돼있던 이미지는 keptUrls로 유지/개별 삭제하고,
+// 새 이미지는 링크와 동일한 패턴으로 "+"를 누를 때마다 슬롯이 하나씩 늘어나며, 각 슬롯에서 파일을
+// 고르면 즉시 로컬 미리보기(URL.createObjectURL)만 보여주고 실제 업로드는 "저장"을 눌렀을 때
+// 한 번에 한다 — 모달 열고 파일만 고른 채 닫으면 업로드가 안 일어나야 하므로.
 function MemoImageModal({ episode, onSave, onClose, busy }) {
   const [memo, setMemo] = useState('');
   const [links, setLinks] = useState([]);
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [removeImage, setRemoveImage] = useState(false);
+  const [keptUrls, setKeptUrls] = useState([]); // 기존에 저장돼있던 이미지 중 삭제 안 한 것
+  const [newSlots, setNewSlots] = useState([]); // 새로 추가하는 이미지 슬롯 [{ file, preview }]
 
   useEffect(() => {
     setMemo(episode?.memo || '');
     setLinks(episode?.links && episode.links.length > 0 ? episode.links : []);
-    setFile(null);
-    setPreview(null);
-    setRemoveImage(false);
+    setKeptUrls(episode?.image_urls && episode.image_urls.length > 0 ? episode.image_urls : []);
+    setNewSlots([]);
   }, [episode]);
 
   if (!episode) return null;
-
-  function handleFileChange(e) {
-    const f = e.target.files?.[0] || null;
-    setFile(f);
-    setRemoveImage(false);
-    setPreview(f ? URL.createObjectURL(f) : null);
-  }
 
   function addLink() {
     setLinks(ls => [...ls, '']);
@@ -271,7 +261,18 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
     setLinks(ls => ls.filter((_, i) => i !== idx));
   }
 
-  const currentImageUrl = removeImage ? null : (preview || episode.image_url);
+  function removeKeptUrl(idx) {
+    setKeptUrls(us => us.filter((_, i) => i !== idx));
+  }
+  function addImageSlot() {
+    setNewSlots(s => [...s, { file: null, preview: null }]);
+  }
+  function updateImageSlot(idx, f) {
+    setNewSlots(s => s.map((slot, i) => (i === idx ? { file: f, preview: f ? URL.createObjectURL(f) : null } : slot)));
+  }
+  function removeImageSlot(idx) {
+    setNewSlots(s => s.filter((_, i) => i !== idx));
+  }
 
   return (
     <div onClick={onClose} style={{
@@ -310,20 +311,44 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
           background: '#fff', color: '#222', cursor: 'pointer',
         }}>+ 링크 추가</button>
 
-        <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>이미지 <span style={{ fontWeight: 400, color: '#999' }}>(1장만 등록 가능)</span></label>
-        {currentImageUrl && (
-          <div style={{ marginBottom: 8 }}>
-            <img src={currentImageUrl} alt="" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 6, display: 'block' }} />
-            <button type="button" onClick={() => { setRemoveImage(true); setFile(null); setPreview(null); }} style={{
-              marginTop: 6, padding: '3px 9px', fontSize: 11.5, borderRadius: 6, border: '1px solid #fecaca',
-              background: '#fff', color: '#dc2626', cursor: 'pointer',
-            }}>이미지 삭제</button>
-          </div>
-        )}
-        <input type="file" accept="image/*" onChange={handleFileChange} style={{ fontSize: 12.5, marginBottom: 18 }} />
+        <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>이미지</label>
+        <div style={{ marginBottom: 8 }}>
+          {keptUrls.map((url, idx) => (
+            <div key={`kept-${idx}`} style={{ marginBottom: 8 }}>
+              <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 6, display: 'block' }} />
+              <button type="button" onClick={() => removeKeptUrl(idx)} style={{
+                marginTop: 6, padding: '3px 9px', fontSize: 11.5, borderRadius: 6, border: '1px solid #fecaca',
+                background: '#fff', color: '#dc2626', cursor: 'pointer',
+              }}>이미지 삭제</button>
+            </div>
+          ))}
+          {newSlots.map((slot, idx) => (
+            <div key={`new-${idx}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                {slot.preview && (
+                  <img src={slot.preview} alt="" style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 6, display: 'block', marginBottom: 6 }} />
+                )}
+                <input type="file" accept="image/*" onChange={e => updateImageSlot(idx, e.target.files?.[0] || null)} style={{ fontSize: 12.5 }} />
+              </div>
+              <button type="button" onClick={() => removeImageSlot(idx)} title="이 이미지 취소" style={{
+                flexShrink: 0, padding: '0 12px', borderRadius: 6, border: '1px solid #fecaca',
+                background: '#fff', color: '#dc2626', fontSize: 14, cursor: 'pointer',
+              }}>−</button>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={addImageSlot} style={{
+          marginBottom: 18, padding: '4px 12px', fontSize: 12.5, borderRadius: 6, border: '1px solid #ccc',
+          background: '#fff', color: '#222', cursor: 'pointer',
+        }}>+ 이미지 추가</button>
 
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => onSave({ memo, file, removeImage, links: links.map(l => l.trim()).filter(Boolean) })} disabled={busy} style={{
+          <button onClick={() => onSave({
+            memo,
+            links: links.map(l => l.trim()).filter(Boolean),
+            keptUrls,
+            newFiles: newSlots.map(s => s.file).filter(Boolean),
+          })} disabled={busy} style={{
             padding: '8px 16px', borderRadius: 6, border: '1px solid #222', background: '#222',
             color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: busy ? 0.6 : 1,
           }}>{busy ? '저장 중...' : '저장'}</button>
@@ -380,8 +405,12 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.program_name}<span style={{ color: '#aaa' }}> {ep.episode_no}회</span></td>
       <td style={{ padding: '6px' }}>
         {ep.content}
-        {ep.image_url && (
-          <img src={ep.image_url} alt="" style={{ display: 'block', marginTop: 6, maxHeight: 48, borderRadius: 4 }} />
+        {ep.image_urls && ep.image_urls.length > 0 && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+            {ep.image_urls.map((url, i) => (
+              <img key={i} src={url} alt="" style={{ maxHeight: 48, borderRadius: 4 }} />
+            ))}
+          </div>
         )}
         {ep.memo && (
           <div style={{ marginTop: 6, fontSize: 11.5, color: '#7c5c00', background: '#fff8e1', borderRadius: 4, padding: '3px 6px' }}>
@@ -497,7 +526,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   async function handleRefresh() {
     setRefreshing(true);
     const [episodeRows, infoRows] = await Promise.all([
-      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified, memo, image_url, links'),
+      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified, memo, image_urls, links'),
       fetchAllPages('tvdb_program_info', 'channel, program_name, replay_url, has_replay'),
     ]);
     const map = infoRowsToMap(infoRows);
@@ -632,29 +661,34 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
     setEpConfirm(null);
   }
 
-  // 병명 탭 — 메모/링크/이미지 저장. 새 파일이 있으면 먼저 Storage에 올리고 공개 URL을 받은 뒤
-  // memo/links와 함께 한 번에 UPDATE한다. "이미지 삭제"만 눌렀으면 업로드 없이 image_url을 null로.
-  // 링크는 빈 문자열을 걸러낸 배열을 그대로 저장하고, 하나도 없으면 null로 되돌린다.
-  async function handleSaveMemoImage({ memo, file, removeImage, links }) {
+  // 병명 탭 — 메모/링크/이미지 저장. 새로 고른 이미지 파일들을 먼저 Storage에 전부 올리고, 남겨둔
+  // 기존 URL(keptUrls)과 합쳐서 image_urls 배열로 한 번에 UPDATE한다. 파일마다 경로를 겹치지
+  // 않게(episode.id-타임스탬프-인덱스-원본파일명) 만들어서 여러 장을 한 번에 올려도 서로 덮어쓰지
+  // 않는다. 이미지를 전부 지웠으면 image_urls를 null로 되돌린다(링크도 동일 규칙).
+  async function handleSaveMemoImage({ memo, links, keptUrls, newFiles }) {
     if (!memoEp) return;
     setMemoBusy(true);
-    let image_url = removeImage ? null : memoEp.image_url;
-    if (file) {
-      const path = `${memoEp.id}-${Date.now()}-${file.name}`;
+    const uploadedUrls = [];
+    const ts = Date.now();
+    for (let i = 0; i < newFiles.length; i++) {
+      const file = newFiles[i];
+      const path = `${memoEp.id}-${ts}-${i}-${file.name}`;
       const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
       if (uploadError) {
         setMemoBusy(false);
         alert('이미지 업로드 실패: ' + uploadError.message);
         return;
       }
-      image_url = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+      uploadedUrls.push(supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl);
     }
+    const combinedUrls = [...keptUrls, ...uploadedUrls];
+    const image_urls = combinedUrls.length > 0 ? combinedUrls : null;
     const memoValue = memo?.trim() ? memo.trim() : null;
     const linksValue = links && links.length > 0 ? links : null;
-    const { error } = await supabase.from('tvdb_program_episodes').update({ memo: memoValue, image_url, links: linksValue }).eq('id', memoEp.id);
+    const { error } = await supabase.from('tvdb_program_episodes').update({ memo: memoValue, image_urls, links: linksValue }).eq('id', memoEp.id);
     setMemoBusy(false);
     if (error) { alert('저장 실패: ' + error.message); return; }
-    setRows(prev => prev.map(r => (r.id === memoEp.id ? { ...r, memo: memoValue, image_url, links: linksValue } : r)));
+    setRows(prev => prev.map(r => (r.id === memoEp.id ? { ...r, memo: memoValue, image_urls, links: linksValue } : r)));
     setMemoEp(null);
   }
 
