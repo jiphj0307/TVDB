@@ -974,8 +974,11 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
 
   // 병명 탭 — 메모/링크/이미지 저장. 새로 고른 이미지 파일들을 먼저 Storage에 전부 올리고, 남겨둔
   // 기존 URL(keptUrls)과 합쳐서 image_urls 배열로 한 번에 UPDATE한다. 파일마다 경로를 겹치지
-  // 않게(episode.id-타임스탬프-인덱스-원본파일명) 만들어서 여러 장을 한 번에 올려도 서로 덮어쓰지
-  // 않는다. 이미지를 전부 지웠으면 image_urls를 null로 되돌린다(링크도 동일 규칙).
+  // 않게(episode.id-타임스탬프-인덱스.확장자) 만들어서 여러 장을 한 번에 올려도 서로 덮어쓰지 않는다.
+  // 원본 파일명은 절대 경로에 넣지 않는다 — 한글/공백/특수문자가 섞인 파일명(예: 스크린샷 캡처
+  // 파일명)을 그대로 Storage 키에 넣으면 "Invalid key" 오류로 업로드가 실패하기 때문(실제 발생 사례:
+  // 한글로 이름 붙인 캡처 이미지 업로드 실패). 확장자만 안전하게 뽑아 쓰고 나머지는 버린다.
+  // 이미지를 전부 지웠으면 image_urls를 null로 되돌린다(링크도 동일 규칙).
   async function handleSaveMemoImage({ memo, links, keptUrls, newFiles }) {
     if (!memoEp) return;
     setMemoBusy(true);
@@ -983,7 +986,8 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
     const ts = Date.now();
     for (let i = 0; i < newFiles.length; i++) {
       const file = newFiles[i];
-      const path = `${memoEp.id}-${ts}-${i}-${file.name}`;
+      const ext = (file.name.match(/\.[a-zA-Z0-9]+$/)?.[0] || '.jpg').toLowerCase();
+      const path = `${memoEp.id}-${ts}-${i}${ext}`;
       const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
       if (uploadError) {
         setMemoBusy(false);
