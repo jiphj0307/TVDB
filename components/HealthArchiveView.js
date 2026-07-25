@@ -18,6 +18,41 @@ async function fetchAllPages(table, select) {
   return all;
 }
 
+// 매번 들어올 때마다 9천여 건을 1000행씩 페이지네이션해서 새로 받아오면 느리다 — 브라우저
+// localStorage에 캐시해두고 CACHE_TTL_MS 이내 재방문이면 네트워크 요청 없이 즉시 렌더링한다.
+// 편집/삭제/체크박스 조작으로 데이터가 바뀔 때마다 persistCache()로 캐시도 같이 갱신해서
+// TTL 안에 새로고침해도 방금 한 조작이 사라져 보이지 않게 한다. 다른 세션(관리자 화면, 수집
+// 스크립트)이 바꾼 내용까지 받으려면 "새로고침" 버튼으로 캐시를 건너뛰고 강제로 다시 받는다.
+const CACHE_KEY = 'tvdb_health_archive_cache_v1';
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || Date.now() - parsed.ts > CACHE_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+// rows/infoRows를 그대로 저장하지 않고 infoMap(Map)을 배열로 풀어서 저장한다 — Map은
+// JSON.stringify가 못 다루기 때문. 저장 용량 초과(사생활 모드 등)는 캐시만 못 하는 것이라
+// 기능에 영향 없게 조용히 무시한다.
+function saveCache(rows, infoMap) {
+  try {
+    const infoRows = Array.from(infoMap.entries()).map(([key, v]) => {
+      const sep = key.indexOf('|');
+      return { channel: key.slice(0, sep), program_name: key.slice(sep + 1), replay_url: v.replay_url, has_replay: v.has_replay };
+    });
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), rows, infoRows }));
+  } catch {
+    // 캐시 저장 실패는 무시 — 다음 로드가 네트워크에서 다시 받아오면 그만이다.
+  }
+}
+
 // has_replay/replay_url은 채널 공식 편성표를 확인해서 다시보기 링크가 실제로 있는 프로그램만
 // true/URL로 채워진 값이다(program.js/BroadcastPanel.js의 ReplayBadge와 동일 규칙) — null이면
 // 아직 확인 안 한 것이라 뱃지를 안 띄운다.
@@ -317,6 +352,8 @@ export default function HealthArchiveView() {
   const [rows, setRows] = useState([]);
   const [infoMap, setInfoMap] = useState(null); // Map('channel|program_name' -> {replay_url, has_replay})
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null); // Date | null — 캐시/네트워크 응답이 반영된 시각
 
   // 기본 화면은 병명별 보기. 채널별 보기는 예전 화면을 그대로 보조 탭으로 남겨둔 것
   // (2026-07-25 사용자 확인: 완전 삭제 대신 보조 탭 유지).
@@ -335,20 +372,38 @@ export default function HealthArchiveView() {
   const [epConfirm, setEpConfirm] = useState(null); // 병명 탭 — 삭제 확인 대상 회차
   const [epConfirmBusy, setEpConfirmBusy] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
+  function infoRowsToMap(infoRows) {
+    const map = new Map();
+    infoRows.forEach(i => map.set(`${i.channel}|${i.program_name}`, { replay_url: i.replay_url, has_replay: i.has_replay }));
+    return map;
+  }
+
+  // 캐시를 건너뛰고 Supabase에서 강제로 새로 받아온다 — 마운트 시 캐시가 없거나 만료됐을 때,
+  // 그리고 사용자가 "새로고침" 버튼을 눌렀을 때(다른 세션이 바꾼 내용을 반영하고 싶을 때) 사용.
+  async function fetchFresh({ silent } = {}) {
+    if (silent) setRefreshing(true); else setLoading(true);
+    const [episodeRows, infoRows] = await Promise.all([
       fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified'),
       fetchAllPages('tvdb_program_info', 'channel, program_name, replay_url, has_replay'),
-    ]).then(([episodeRows, infoRows]) => {
-      if (cancelled) return;
-      setRows(episodeRows);
-      const map = new Map();
-      infoRows.forEach(i => map.set(`${i.channel}|${i.program_name}`, { replay_url: i.replay_url, has_replay: i.has_replay }));
-      setInfoMap(map);
+    ]);
+    const map = infoRowsToMap(infoRows);
+    setRows(episodeRows);
+    setInfoMap(map);
+    saveCache(episodeRows, map);
+    setLastUpdated(new Date());
+    if (silent) setRefreshing(false); else setLoading(false);
+  }
+
+  useEffect(() => {
+    const cached = loadCache();
+    if (cached) {
+      setRows(cached.rows);
+      setInfoMap(infoRowsToMap(cached.infoRows));
+      setLastUpdated(new Date(cached.ts));
       setLoading(false);
-    });
-    return () => { cancelled = true; };
+    } else {
+      fetchFresh();
+    }
   }, []);
 
   // 관리자 미등록/삭제된 라벨을 제외한, 이 화면에서 실제로 다룰 회차만 미리 걸러둔다.
@@ -443,11 +498,10 @@ export default function HealthArchiveView() {
       .eq('channel', confirm.channel).eq('program_name', confirm.program_name);
     setConfirmBusy(false);
     if (error) { alert('삭제 실패: ' + error.message); return; }
-    setInfoMap(prev => {
-      const next = new Map(prev);
-      next.delete(`${confirm.channel}|${confirm.program_name}`);
-      return next;
-    });
+    const nextInfoMap = new Map(infoMap);
+    nextInfoMap.delete(`${confirm.channel}|${confirm.program_name}`);
+    setInfoMap(nextInfoMap);
+    saveCache(rows, nextInfoMap);
     if (opened && opened.channel === confirm.channel && opened.program_name === confirm.program_name) {
       setOpened(null);
     }
@@ -463,7 +517,9 @@ export default function HealthArchiveView() {
     const { error } = await supabase.from('tvdb_program_episodes').update({ disease_tags }).eq('id', editingEp.id);
     setEditBusy(false);
     if (error) { alert('저장 실패: ' + error.message); return; }
-    setRows(prev => prev.map(r => (r.id === editingEp.id ? { ...r, disease_tags } : r)));
+    const nextRows = rows.map(r => (r.id === editingEp.id ? { ...r, disease_tags } : r));
+    setRows(nextRows);
+    saveCache(nextRows, infoMap);
     setEditingEp(null);
   }
 
@@ -475,7 +531,9 @@ export default function HealthArchiveView() {
     const { error } = await supabase.from('tvdb_program_episodes').delete().eq('id', epConfirm.id);
     setEpConfirmBusy(false);
     if (error) { alert('삭제 실패: ' + error.message); return; }
-    setRows(prev => prev.filter(r => r.id !== epConfirm.id));
+    const nextRows = rows.filter(r => r.id !== epConfirm.id);
+    setRows(nextRows);
+    saveCache(nextRows, infoMap);
     setEpConfirm(null);
   }
 
@@ -483,14 +541,18 @@ export default function HealthArchiveView() {
     const blog_used = !ep.blog_used;
     const { error } = await supabase.from('tvdb_program_episodes').update({ blog_used }).eq('id', ep.id);
     if (error) { alert('저장 실패: ' + error.message); return; }
-    setRows(prev => prev.map(r => (r.id === ep.id ? { ...r, blog_used } : r)));
+    const nextRows = rows.map(r => (r.id === ep.id ? { ...r, blog_used } : r));
+    setRows(nextRows);
+    saveCache(nextRows, infoMap);
   }
 
   async function handleToggleVideoVerified(ep) {
     const video_verified = !ep.video_verified;
     const { error } = await supabase.from('tvdb_program_episodes').update({ video_verified }).eq('id', ep.id);
     if (error) { alert('저장 실패: ' + error.message); return; }
-    setRows(prev => prev.map(r => (r.id === ep.id ? { ...r, video_verified } : r)));
+    const nextRows = rows.map(r => (r.id === ep.id ? { ...r, video_verified } : r));
+    setRows(nextRows);
+    saveCache(nextRows, infoMap);
   }
 
   if (loading) return <p>불러오는 중...</p>;
@@ -506,7 +568,7 @@ export default function HealthArchiveView() {
         ('{OTHER_LABEL}' 제외) — 채널·프로그램은 각 회차의 부가 정보로만 표시됩니다.
       </p>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         <button onClick={() => setViewMode('disease')} style={{
           padding: '6px 12px', borderRadius: 999, border: '1px solid #222', fontSize: 12.5, cursor: 'pointer',
           background: viewMode === 'disease' ? '#222' : '#fff', color: viewMode === 'disease' ? '#fff' : '#222',
@@ -515,6 +577,15 @@ export default function HealthArchiveView() {
           padding: '6px 12px', borderRadius: 999, border: '1px solid #222', fontSize: 12.5, cursor: 'pointer',
           background: viewMode === 'channel' ? '#222' : '#fff', color: viewMode === 'channel' ? '#fff' : '#222',
         }}>📺 채널별 보기</button>
+        <button onClick={() => fetchFresh({ silent: true })} disabled={refreshing} style={{
+          padding: '6px 12px', borderRadius: 999, border: '1px solid #ccc', fontSize: 12.5, cursor: 'pointer',
+          background: '#fff', color: '#444', opacity: refreshing ? 0.6 : 1,
+        }}>{refreshing ? '새로고침 중...' : '🔄 새로고침'}</button>
+        {lastUpdated && (
+          <span style={{ fontSize: 11.5, color: '#999' }}>
+            마지막 갱신 {lastUpdated.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
       </div>
 
       {viewMode === 'disease' && (

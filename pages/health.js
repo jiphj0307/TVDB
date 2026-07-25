@@ -1,32 +1,20 @@
 
 import Head from 'next/head';
-import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
 import { AdSlot } from '../components/AdSlot';
 import { useAdSlot } from '../lib/AdSlotsContext';
 import { Nav } from '../components/Nav';
 import HealthArchiveView from '../components/HealthArchiveView';
 
-// food.js와 동일하게 admin.js 로그인 성공 시 저장되는 sessionStorage.tvdb_admin='1'인
-// 사람만 볼 수 있다. 데이터가 tvdb_program_episodes에서 클라이언트가 직접 조회하는
-// 구조라 getStaticProps는 필요 없음(무거운 분류 작업이 없는 단순 집계라서).
+// 원래는 admin.js 로그인 성공 시 저장되는 sessionStorage.tvdb_admin='1'인 사람만 볼 수 있게
+// 막혀 있었는데, 2026-07-25 디버깅 편의를 위해 우선 그 제한을 풀었다(비밀번호 없이 누구나
+// 접근 가능). 회차 삭제/분류수정/체크박스 같은 쓰기 동작 버튼은 여전히 이 화면에 그대로
+// 노출되므로, 나중에 정식으로 공개할 거면 그 부분은 별도로 admin 여부에 따라 가릴지 다시
+// 정해야 한다 — 지금은 "우선 풀어보자"는 임시 조치임.
 export default function HealthPage() {
-  const router = useRouter();
   const topSlot = useAdSlot('health_top');
   const bottomSlot = useAdSlot('health_bottom');
   const leftSlot = useAdSlot('health_left');
   const rightSlot = useAdSlot('health_right');
-
-  const [checked, setChecked] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    const ok = sessionStorage.getItem('tvdb_admin') === '1';
-    setIsAdmin(ok);
-    setChecked(true);
-    if (!ok) router.replace('/');
-  }, [router]);
-
-  if (!checked || !isAdmin) return null;
 
   return (
     <>

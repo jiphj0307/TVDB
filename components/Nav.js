@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 
+// '건강 · 생활 · 먹거리'는 2026-07-25부터 관리자 전용 제한을 풀어서 누구나 접근 가능 —
+// pages/health.js도 동일하게 admin 게이트를 없앴다. 나머지(과일·건기식·식품)는 그대로 admin만.
 const LINKS = [
   { href: '/', label: '홈쇼핑 · 편성표' },
   { href: '/program', label: '📺 일반방송' },
   { href: '/food', label: '🍑 과일 · 건기식 · 식품', adminOnly: true },
-  { href: '/health', label: '🩺 건강 · 생활 · 먹거리', adminOnly: true },
+  { href: '/health', label: '🩺 건강 · 생활 · 먹거리' },
 ];
 
 export function Nav() {
