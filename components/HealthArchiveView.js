@@ -10,6 +10,9 @@ import { DISEASE_DEFS, OTHER_LABEL } from '../lib/diseaseClassifier';
 // 갖고 있고, 화면에 그리는 행 수만 점진적으로 늘리는 것이라 별도 서버 요청은 필요 없다.
 const PAGE_SIZE = 100;
 
+// 메모/이미지 업로드용 Storage 버킷(공개 버킷으로 미리 만들어둬야 함 — 아래 안내 참고).
+const STORAGE_BUCKET = 'tvdb-episode-images';
+
 // Supabase REST가 한 번에 내려주는 행 수를 서버 설정상 1000행으로 잘라버리기 때문에,
 // tvdb_program_episodes 전체(9천여 건)를 다 훑으려면 끝까지 페이지네이션해야 한다.
 // 최초 로드는 이제 pages/health.js의 getStaticProps(lib/loadHealthTree.js)가 서버에서
@@ -227,6 +230,81 @@ function CategoryEditModal({ episode, onSave, onClose, busy }) {
   );
 }
 
+// 회차 하나에 자유 메모 + 이미지 한 장을 등록하는 모달. 이미지는 STORAGE_BUCKET(공개 버킷)에
+// 업로드하고 공개 URL만 tvdb_program_episodes.image_url에 저장한다(파일 자체는 DB가 아니라
+// Storage에 있음). 새 파일을 고르면 즉시 로컬 미리보기(URL.createObjectURL)만 보여주고,
+// 실제 업로드는 "저장"을 눌렀을 때 한 번에 한다 — 모달 열고 파일만 고른 채 닫으면 업로드가
+// 안 일어나야 하므로.
+function MemoImageModal({ episode, onSave, onClose, busy }) {
+  const [memo, setMemo] = useState('');
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
+
+  useEffect(() => {
+    setMemo(episode?.memo || '');
+    setFile(null);
+    setPreview(null);
+    setRemoveImage(false);
+  }, [episode]);
+
+  if (!episode) return null;
+
+  function handleFileChange(e) {
+    const f = e.target.files?.[0] || null;
+    setFile(f);
+    setRemoveImage(false);
+    setPreview(f ? URL.createObjectURL(f) : null);
+  }
+
+  const currentImageUrl = removeImage ? null : (preview || episode.image_url);
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 480, width: '100%',
+        maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>메모 · 이미지</div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
+        </div>
+        <p style={{ fontSize: 12, color: '#888', margin: '4px 0 14px' }}>[{episode.channel}] {episode.program_name} {episode.episode_no}회</p>
+
+        <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>메모</label>
+        <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={4} placeholder="자유롭게 메모를 남겨주세요"
+          style={{ width: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 6, border: '1px solid #ccc', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', marginBottom: 16 }} />
+
+        <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>이미지</label>
+        {currentImageUrl && (
+          <div style={{ marginBottom: 8 }}>
+            <img src={currentImageUrl} alt="" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 6, display: 'block' }} />
+            <button type="button" onClick={() => { setRemoveImage(true); setFile(null); setPreview(null); }} style={{
+              marginTop: 6, padding: '3px 9px', fontSize: 11.5, borderRadius: 6, border: '1px solid #fecaca',
+              background: '#fff', color: '#dc2626', cursor: 'pointer',
+            }}>이미지 삭제</button>
+          </div>
+        )}
+        <input type="file" accept="image/*" onChange={handleFileChange} style={{ fontSize: 12.5, marginBottom: 18 }} />
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => onSave({ memo, file, removeImage })} disabled={busy} style={{
+            padding: '8px 16px', borderRadius: 6, border: '1px solid #222', background: '#222',
+            color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: busy ? 0.6 : 1,
+          }}>{busy ? '저장 중...' : '저장'}</button>
+          <button type="button" onClick={onClose} style={{
+            padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#fff',
+            color: '#222', fontSize: 13, cursor: 'pointer',
+          }}>취소</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 채널/병명 탭 공용 버튼 — ShoppingFoodView.js의 TabButton과 동일한 스타일.
 function TabButton({ label, count, active, onClick }) {
   return (
@@ -261,14 +339,24 @@ function StatusCheckbox({ checked, onChange, label }) {
   );
 }
 
-function EpisodeRow({ ep, info, onEdit, onDelete, onToggleBlogUsed, onToggleVideoVerified }) {
+function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified }) {
   const canWatch = info?.has_replay && info?.replay_url;
   return (
     <tr style={{ borderBottom: '1px solid #eee' }}>
       <td style={{ padding: '6px', color: '#888', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.air_date || '-'}</td>
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.channel}</td>
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.program_name}<span style={{ color: '#aaa' }}> {ep.episode_no}회</span></td>
-      <td style={{ padding: '6px' }}>{ep.content}</td>
+      <td style={{ padding: '6px' }}>
+        {ep.content}
+        {ep.image_url && (
+          <img src={ep.image_url} alt="" style={{ display: 'block', marginTop: 6, maxHeight: 48, borderRadius: 4 }} />
+        )}
+        {ep.memo && (
+          <div style={{ marginTop: 6, fontSize: 11.5, color: '#7c5c00', background: '#fff8e1', borderRadius: 4, padding: '3px 6px' }}>
+            📝 {ep.memo}
+          </div>
+        )}
+      </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
         <StatusCheckbox checked={ep.blog_used} onChange={() => onToggleBlogUsed(ep)} label="블로그 사용완료" />
       </td>
@@ -283,6 +371,7 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onToggleBlogUsed, onToggleVide
             <span style={{ ...actionBtnStyle, color: '#bbb', cursor: 'default' }}>다시보기 없음</span>
           )}
           <button onClick={() => onEdit(ep)} style={actionBtnStyle}>분류수정</button>
+          <button onClick={() => onEditMemo(ep)} style={actionBtnStyle}>📝 메모·이미지</button>
           <button onClick={() => onDelete(ep)} style={{ ...actionBtnStyle, borderColor: '#fecaca', color: '#dc2626' }}>삭제</button>
         </div>
       </td>
@@ -295,7 +384,7 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onToggleBlogUsed, onToggleVide
 // 채널/프로그램은 각 행의 부가 정보로만 남긴다 — 2026-07-25 인계 메모 참고.)
 // episodes는 이미 호출부(HealthArchiveView)에서 PAGE_SIZE만큼 잘라서 넘어온다 — 여기서는
 // 받은 것만 그대로 그린다.
-function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onToggleBlogUsed, onToggleVideoVerified }) {
+function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
@@ -306,13 +395,13 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onToggleBlogUsed, o
           <th style={{ padding: '6px' }}>내용</th>
           <th style={{ padding: '6px', width: 90 }}>블로그</th>
           <th style={{ padding: '6px', width: 90 }}>영상확인</th>
-          <th style={{ padding: '6px', width: 200 }}>관리</th>
+          <th style={{ padding: '6px', width: 250 }}>관리</th>
         </tr>
       </thead>
       <tbody>
         {episodes.map(ep => (
           <EpisodeRow key={ep.id} ep={ep} info={infoMap?.get(`${ep.channel}|${ep.program_name}`)}
-            onEdit={onEdit} onDelete={onDelete}
+            onEdit={onEdit} onDelete={onDelete} onEditMemo={onEditMemo}
             onToggleBlogUsed={onToggleBlogUsed} onToggleVideoVerified={onToggleVideoVerified} />
         ))}
         {episodes.length === 0 && (
@@ -361,12 +450,15 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   const [epConfirm, setEpConfirm] = useState(null); // 병명 탭 — 삭제 확인 대상 회차
   const [epConfirmBusy, setEpConfirmBusy] = useState(false);
 
+  const [memoEp, setMemoEp] = useState(null); // 병명 탭 — 메모·이미지 수정 대상 회차
+  const [memoBusy, setMemoBusy] = useState(false);
+
   // ISR 스냅샷이 최대 10분 묵을 수 있어서, 다른 세션(관리자 화면, 수집 스크립트, 다른 방문자의
   // 편집)이 그 사이 바꾼 내용까지 지금 보고 싶을 때 누르는 수동 새로고침.
   async function handleRefresh() {
     setRefreshing(true);
     const [episodeRows, infoRows] = await Promise.all([
-      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified'),
+      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified, memo, image_url'),
       fetchAllPages('tvdb_program_info', 'channel, program_name, replay_url, has_replay'),
     ]);
     const map = infoRowsToMap(infoRows);
@@ -501,6 +593,30 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
     setEpConfirm(null);
   }
 
+  // 병명 탭 — 메모/이미지 저장. 새 파일이 있으면 먼저 Storage에 올리고 공개 URL을 받은 뒤
+  // memo와 함께 한 번에 UPDATE한다. "이미지 삭제"만 눌렀으면 업로드 없이 image_url을 null로.
+  async function handleSaveMemoImage({ memo, file, removeImage }) {
+    if (!memoEp) return;
+    setMemoBusy(true);
+    let image_url = removeImage ? null : memoEp.image_url;
+    if (file) {
+      const path = `${memoEp.id}-${Date.now()}-${file.name}`;
+      const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
+      if (uploadError) {
+        setMemoBusy(false);
+        alert('이미지 업로드 실패: ' + uploadError.message);
+        return;
+      }
+      image_url = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+    }
+    const memoValue = memo?.trim() ? memo.trim() : null;
+    const { error } = await supabase.from('tvdb_program_episodes').update({ memo: memoValue, image_url }).eq('id', memoEp.id);
+    setMemoBusy(false);
+    if (error) { alert('저장 실패: ' + error.message); return; }
+    setRows(prev => prev.map(r => (r.id === memoEp.id ? { ...r, memo: memoValue, image_url } : r)));
+    setMemoEp(null);
+  }
+
   async function handleToggleBlogUsed(ep) {
     const blog_used = !ep.blog_used;
     const { error } = await supabase.from('tvdb_program_episodes').update({ blog_used }).eq('id', ep.id);
@@ -563,6 +679,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
                 infoMap={infoMap}
                 onEdit={setEditingEp}
                 onDelete={setEpConfirm}
+                onEditMemo={setMemoEp}
                 onToggleBlogUsed={handleToggleBlogUsed}
                 onToggleVideoVerified={handleToggleVideoVerified}
               />
@@ -641,6 +758,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
 
       <CategoryEditModal episode={editingEp} onSave={handleSaveCategories} onClose={() => setEditingEp(null)} busy={editBusy} />
       <EpisodeDeleteConfirm episode={epConfirm} onConfirm={handleConfirmDeleteEpisode} onCancel={() => setEpConfirm(null)} busy={epConfirmBusy} />
+      <MemoImageModal episode={memoEp} onSave={handleSaveMemoImage} onClose={() => setMemoEp(null)} busy={memoBusy} />
     </div>
   );
 }
