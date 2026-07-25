@@ -4,13 +4,18 @@ import { AdSlot } from '../components/AdSlot';
 import { useAdSlot } from '../lib/AdSlotsContext';
 import { Nav } from '../components/Nav';
 import HealthArchiveView from '../components/HealthArchiveView';
+import { loadHealthData } from '../lib/loadHealthTree';
 
-// 원래는 admin.js 로그인 성공 시 저장되는 sessionStorage.tvdb_admin='1'인 사람만 볼 수 있게
-// 막혀 있었는데, 2026-07-25 디버깅 편의를 위해 우선 그 제한을 풀었다(비밀번호 없이 누구나
-// 접근 가능). 회차 삭제/분류수정/체크박스 같은 쓰기 동작 버튼은 여전히 이 화면에 그대로
-// 노출되므로, 나중에 정식으로 공개할 거면 그 부분은 별도로 admin 여부에 따라 가릴지 다시
-// 정해야 한다 — 지금은 "우선 풀어보자"는 임시 조치임.
-export default function HealthPage() {
+// food.js와 동일한 이유로(9천여 건을 방문할 때마다 브라우저에서 훑으면 느림) 여기서 서버가
+// 미리 받아둔 걸 정적으로 내려준다(ISR, 10분마다 재생성) — disease_tags는 이미 SQL로
+// 백필돼 있어서 loadFoodTree.js의 classifyNewRows() 같은 분류 단계 없이 그대로 읽기만 한다.
+// 관리자 전용 제한은 2026-07-25 디버깅 편의를 위해 풀어둔 상태 유지(누구나 접근 가능).
+export async function getStaticProps() {
+  const { rows, infoRows } = await loadHealthData();
+  return { props: { initialRows: rows, initialInfoRows: infoRows, generatedAt: new Date().toISOString() }, revalidate: 600 };
+}
+
+export default function HealthPage({ initialRows, initialInfoRows, generatedAt }) {
   const topSlot = useAdSlot('health_top');
   const bottomSlot = useAdSlot('health_bottom');
   const leftSlot = useAdSlot('health_left');
@@ -34,7 +39,7 @@ export default function HealthPage() {
             <AdSlot slot="health_top" label="광고" slotData={topSlot} />
           </div>
 
-          <HealthArchiveView />
+          <HealthArchiveView initialRows={initialRows} initialInfoRows={initialInfoRows} generatedAt={generatedAt} />
 
           <div style={{ marginTop: 24 }}>
             <AdSlot slot="health_bottom" label="광고" slotData={bottomSlot} />
