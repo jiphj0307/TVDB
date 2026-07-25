@@ -277,17 +277,20 @@ function CategoryEditModal({ episode, onSave, onClose, busy }) {
 // 회차 하나에 자유 메모 + 링크 여러 개 + 이미지 여러 장을 등록하는 모달. 이미지는 STORAGE_BUCKET
 // (공개 버킷)에 업로드하고 공개 URL 배열만 tvdb_program_episodes.image_urls에 저장한다(파일
 // 자체는 DB가 아니라 Storage에 있음). 기존에 저장돼있던 이미지는 keptUrls로 유지/개별 삭제하고,
-// 새 이미지는 두 가지 방법으로 슬롯에 추가할 수 있다: (1) 기존처럼 파일 선택 "+ 이미지 추가",
-// (2) 신규 "📸 화면 캡처로 추가" — pages/capture.js와 동일한 getDisplayMedia+캔버스 크롭 로직을
-// 이 모달 안에 그대로 넣어서, "바로가기"로 다시보기를 새 탭에서 재생해두고 돌아와 화면을 캡처하면
-// 로컬에 PNG로 다운받았다가 파일 선택기로 다시 올리는 왕복 없이 캡처 결과가 바로 newSlots에
-// 들어간다. 두 방법 모두 최종적으로 동일한 { file, preview } 모양이라 저장(handleSaveMemoImage)
-// 쪽 로직은 손댈 필요가 없다.
+// 새 이미지는 세 가지 방법으로 한꺼번에 슬롯에 추가할 수 있다: (1) "+ 이미지 추가" 버튼으로 여는
+// multiple 파일 선택창에서 여러 장을 골라 한 번에, (2) 탐색기에서 이미지 여러 장을 그대로 드래그해
+// 이미지 영역(점선 박스)에 드롭해서 한 번에, (3) "📸 화면 캡처로 추가" — pages/capture.js와 동일한
+// getDisplayMedia+캔버스 크롭 로직을 이 모달 안에 그대로 넣어서, "바로가기"로 다시보기를 새 탭에서
+// 재생해두고 돌아와 화면을 캡처하면 로컬에 PNG로 다운받았다가 파일 선택기로 다시 올리는 왕복 없이
+// 캡처 결과가 바로 newSlots에 들어간다. 세 방법 모두 최종적으로 동일한 { file, preview } 모양이라
+// 저장(handleSaveMemoImage) 쪽 로직은 손댈 필요가 없다.
 function MemoImageModal({ episode, onSave, onClose, busy }) {
   const [memo, setMemo] = useState('');
   const [links, setLinks] = useState([]);
   const [keptUrls, setKeptUrls] = useState([]); // 기존에 저장돼있던 이미지 중 삭제 안 한 것
   const [newSlots, setNewSlots] = useState([]); // 새로 추가하는 이미지 슬롯 [{ file, preview }]
+  const fileInputRef = useRef(null); // 숨겨둔 multiple 파일 입력 — "+ 이미지 추가" 버튼이 이걸 클릭시킨다
+  const [dragOver, setDragOver] = useState(false); // 이미지 영역에 파일을 드래그해 올리는 중인지
 
   // 화면 캡처 단계: null(안 함) | 'sharing'(화면 공유 중, 재생 중인 영상 미리보기) |
   // 'captured'(프레임 한 장 캡처해서 영역 자르는 중) — capture.js의 상태 흐름과 동일하다.
@@ -326,11 +329,13 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
   function removeKeptUrl(idx) {
     setKeptUrls(us => us.filter((_, i) => i !== idx));
   }
-  function addImageSlot() {
-    setNewSlots(s => [...s, { file: null, preview: null }]);
-  }
-  function updateImageSlot(idx, f) {
-    setNewSlots(s => s.map((slot, i) => (i === idx ? { file: f, preview: f ? URL.createObjectURL(f) : null } : slot)));
+  // 여러 장을 한꺼번에 받는다 — "+ 이미지 추가" 버튼으로 여는 파일 선택창에서 여러 장을 골라도,
+  // 탐색기에서 여러 장을 드래그해서 이 모달 위에 통째로 놓아도 전부 이 함수를 거쳐 newSlots에
+  // 한 번에 추가된다(이미지가 아닌 파일은 조용히 걸러낸다).
+  function addImageFiles(fileList) {
+    const files = Array.from(fileList || []).filter(f => f && f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    setNewSlots(s => [...s, ...files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))]);
   }
   function removeImageSlot(idx) {
     setNewSlots(s => s.filter((_, i) => i !== idx));
@@ -553,7 +558,24 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
         }}>+ 링크 추가</button>
 
         <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>이미지</label>
-        <div style={{ marginBottom: 8 }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={e => { addImageFiles(e.target.files); e.target.value = ''; }}
+          style={{ display: 'none' }}
+        />
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); addImageFiles(e.dataTransfer.files); }}
+          style={{
+            marginBottom: 8, padding: 8, borderRadius: 8,
+            border: dragOver ? '2px dashed #2563eb' : '2px dashed #ddd',
+            background: dragOver ? '#eff6ff' : 'transparent',
+          }}
+        >
           {keptUrls.map((url, idx) => (
             <div key={`kept-${idx}`} style={{ marginBottom: 8 }}>
               <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 6, display: 'block' }} />
@@ -565,21 +587,21 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
           ))}
           {newSlots.map((slot, idx) => (
             <div key={`new-${idx}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 8 }}>
-              <div style={{ flex: 1 }}>
-                {slot.preview && (
-                  <img src={slot.preview} alt="" style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 6, display: 'block', marginBottom: 6 }} />
-                )}
-                <input type="file" accept="image/*" onChange={e => updateImageSlot(idx, e.target.files?.[0] || null)} style={{ fontSize: 12.5 }} />
-              </div>
+              <img src={slot.preview} alt="" style={{ flex: 1, maxWidth: '100%', maxHeight: 180, borderRadius: 6, display: 'block' }} />
               <button type="button" onClick={() => removeImageSlot(idx)} title="이 이미지 취소" style={{
                 flexShrink: 0, padding: '0 12px', borderRadius: 6, border: '1px solid #fecaca',
                 background: '#fff', color: '#dc2626', fontSize: 14, cursor: 'pointer',
               }}>−</button>
             </div>
           ))}
+          {keptUrls.length === 0 && newSlots.length === 0 && (
+            <p style={{ margin: 0, padding: '10px 0', fontSize: 12, color: '#999', textAlign: 'center' }}>
+              여기로 이미지 파일을 여러 장 한꺼번에 드래그해서 놓을 수 있어요
+            </p>
+          )}
         </div>
         <div style={{ marginBottom: 18, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={addImageSlot} style={{
+          <button type="button" onClick={() => fileInputRef.current?.click()} style={{
             padding: '4px 12px', fontSize: 12.5, borderRadius: 6, border: '1px solid #ccc',
             background: '#fff', color: '#222', cursor: 'pointer',
           }}>+ 이미지 추가</button>
