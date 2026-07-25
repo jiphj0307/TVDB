@@ -253,7 +253,14 @@ function CategoryEditModal({ episode, onSave, onClose, busy }) {
           }}>+ 카테고리 추가</button>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => onSave(Array.from(selected))} disabled={busy} style={{
+          {/* "+카테고리 추가" 버튼을 안 누르고 입력창에 이름만 쳐둔 채 바로 저장을 누르면 그 텍스트가
+              selected에 한 번도 안 들어간 상태라 조용히 사라졌다 — 저장 시점에 남은 입력값을 합쳐서 보낸다. */}
+          <button onClick={() => {
+            const finalSet = new Set(selected);
+            const trimmed = newLabel.trim();
+            if (trimmed) finalSet.add(trimmed);
+            onSave(Array.from(finalSet));
+          }} disabled={busy} style={{
             padding: '8px 16px', borderRadius: 6, border: '1px solid #222', background: '#222',
             color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: busy ? 0.6 : 1,
           }}>{busy ? '저장 중...' : '저장'}</button>
@@ -677,10 +684,10 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
         )}
       </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
-        <StatusCheckbox checked={ep.blog_used} onChange={() => onToggleBlogUsed(ep)} label="블로그 사용완료" />
+        <StatusCheckbox checked={ep.blog_used} onChange={() => onToggleBlogUsed(ep)} label="블로그" />
       </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
-        <StatusCheckbox checked={ep.video_verified} onChange={() => onToggleVideoVerified(ep)} label="영상확인완료" />
+        <StatusCheckbox checked={ep.video_verified} onChange={() => onToggleVideoVerified(ep)} label="영상" />
       </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
