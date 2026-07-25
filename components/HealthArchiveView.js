@@ -654,11 +654,41 @@ function StatusCheckbox({ checked, onChange, label }) {
   );
 }
 
+// 회차 번호(#id)를 클릭 한 번으로 복사할 수 있는 완성된 작업지침으로 바꿔주는 버튼.
+// 이 대화 맥락을 모르는 다른 클로드 세션에 그대로 붙여넣어도 알아듣도록, "TVDB MCP를 쓸 것"
+// "get_system_prompt/tvdb_channel_notes부터 확인할 것"까지 명시한다 — ffmpeg 캡처 자체는
+// 서버(Vercel)에서 못 돌리므로(83MB 용량 제한) 이 지침을 받은 클로드가 자기 Bash로 직접
+// 돌리는 구조는 그대로 필요하다(2026-07-26 확인).
+function buildCaptureInstruction(ep) {
+  const category = (ep.disease_tags && ep.disease_tags.length > 0) ? ep.disease_tags.join(', ') : '기타';
+  return `[TVDB] 회차 #${ep.id} 블로그 스샷 작업 요청
+
+1. TVDB MCP 서버에 연결해서 get_system_prompt로 최신 방법론부터 확인할 것
+2. get_rows로 tvdb_program_episodes에서 id=${ep.id} 조회 (${ep.channel} ${ep.program_name} ${ep.episode_no}회, 병명 카테고리: ${category})
+3. 그 회차의 다시보기/클립 링크(위 조회 결과의 links, 필요하면 tvdb_program_info.replay_url)에서 채널별 추출 방법을 tvdb_channel_notes에서 확인
+4. 링크를 열어(또는 스트림 URL 찾아서) ffmpeg로 "${category}" 블로그 소재에 쓸 장면을 캡처 — Bash 도구로 직접 실행
+5. Downloads에 새 폴더 만들어서 캡처한 이미지를 저장하고 전달할 것`;
+}
+
 function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified }) {
   const canWatch = info?.has_replay && info?.replay_url;
+  const [copied, setCopied] = useState(false);
+  function copyInstruction() {
+    navigator.clipboard.writeText(buildCaptureInstruction(ep)).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
   return (
     <tr style={{ borderBottom: '1px solid #eee' }}>
-      <td style={{ padding: '6px', color: '#aaa', whiteSpace: 'nowrap', verticalAlign: 'top', fontSize: 11.5 }}>#{ep.id}</td>
+      <td style={{ padding: '6px', color: '#aaa', whiteSpace: 'nowrap', verticalAlign: 'top', fontSize: 11.5 }}>
+        #{ep.id}
+        <button onClick={copyInstruction} title="이 회차 작업지침 복사" style={{
+          display: 'block', marginTop: 4, padding: '2px 6px', fontSize: 10.5, borderRadius: 4,
+          border: '1px solid #ccc', background: copied ? '#dcfce7' : '#fff',
+          color: copied ? '#16a34a' : '#888', cursor: 'pointer', whiteSpace: 'nowrap',
+        }}>{copied ? '✓ 복사됨' : '📋 지침 복사'}</button>
+      </td>
       <td style={{ padding: '6px', color: '#888', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.air_date || '-'}</td>
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.channel}</td>
       <td style={{ padding: '6px', verticalAlign: 'top', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{ep.program_name}<span style={{ color: '#aaa' }}> {ep.episode_no}회</span></td>
