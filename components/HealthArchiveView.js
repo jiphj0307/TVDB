@@ -716,13 +716,6 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
       <td style={{ padding: '6px', verticalAlign: 'top', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{ep.program_name}<span style={{ color: '#aaa' }}> {ep.episode_no}회</span></td>
       <td style={{ padding: '6px' }}>
         {ep.content}
-        {ep.image_urls && ep.image_urls.length > 0 && (
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-            {ep.image_urls.map((url, i) => (
-              <img key={i} src={url} alt="" style={{ maxHeight: 48, borderRadius: 4 }} />
-            ))}
-          </div>
-        )}
         {ep.memo && (
           <div style={{ marginTop: 6, fontSize: 11.5, color: '#7c5c00', background: '#fff8e1', borderRadius: 4, padding: '3px 6px' }}>
             📝 {ep.memo}
