@@ -1,7 +1,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { OTHER_LABEL } from '../lib/diseaseClassifier';
+import { DISEASE_DEFS, OTHER_LABEL } from '../lib/diseaseClassifier';
 
 // Supabase REST가 한 번에 내려주는 행 수를 서버 설정상 1000행으로 잘라버리기 때문에,
 // tvdb_program_episodes 전체(9천여 건)를 다 훑으려면 끝까지 페이지네이션해야 한다
@@ -94,7 +94,7 @@ function EpisodeModal({ channel, programName, info, episodes, onClose }) {
 }
 
 // 삭제는 되돌릴 수 없으니 버튼 클릭 즉시 지우지 않고 이 모달로 한 번 더 확인시킨다
-// (BroadcastPanel.js의 ConfirmModal과 동일한 패턴) — 채널별 보기 전용.
+// (BroadcastPanel.js의 ConfirmModal과 동일한 패턴) — 채널별 보기 전용(프로그램 전체 삭제).
 function ConfirmModal({ confirm, onConfirm, onCancel, busy }) {
   if (!confirm) return null;
   return (
@@ -126,6 +126,93 @@ function ConfirmModal({ confirm, onConfirm, onCancel, busy }) {
   );
 }
 
+// 병명 탭에서 회차 하나를 통째로 지운다 — 채널별 보기의 ConfirmModal(프로그램 전체 등록정보 삭제)과
+// 달리 여기는 tvdb_program_episodes의 개별 회차 행 자체를 지우는 것이라 별도 모달로 분리했다.
+function EpisodeDeleteConfirm({ episode, onConfirm, onCancel, busy }) {
+  if (!episode) return null;
+  return (
+    <div onClick={onCancel} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 420, width: '100%',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>이 회차를 삭제할까요?</div>
+        <p style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+          [{episode.channel}] {episode.program_name} {episode.episode_no}회 — 이 회차 데이터를
+          완전히 삭제합니다(되돌릴 수 없음, 프로그램 등록정보 자체는 그대로 남습니다).
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onConfirm} disabled={busy} style={{
+            padding: '8px 16px', borderRadius: 6, border: '1px solid #dc2626', background: '#dc2626',
+            color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: busy ? 0.6 : 1,
+          }}>{busy ? '삭제 중...' : '삭제'}</button>
+          <button type="button" onClick={onCancel} style={{
+            padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#fff',
+            color: '#222', fontSize: 13, cursor: 'pointer',
+          }}>취소</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 회차 하나의 disease_tags를 직접 고쳐 넣는 모달. 분류기가 못 잡았거나(=기타로 빠졌거나)
+// 잘못 잡은 경우를 수동으로 바로잡기 위함 — DISEASE_DEFS 라벨을 토글 버튼으로 보여주고
+// 선택된 것만 배열로 저장한다(빈 배열이면 '기타'로 돌아감).
+function CategoryEditModal({ episode, onSave, onClose, busy }) {
+  const [selected, setSelected] = useState(new Set());
+  useEffect(() => {
+    setSelected(new Set(episode?.disease_tags || []));
+  }, [episode]);
+  if (!episode) return null;
+  function toggle(label) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      return next;
+    });
+  }
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 560, width: '100%',
+        maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>병명 카테고리 수정</div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
+        </div>
+        <p style={{ fontSize: 12, color: '#888', margin: '4px 0 2px' }}>[{episode.channel}] {episode.program_name} {episode.episode_no}회</p>
+        <p style={{ fontSize: 12.5, color: '#444', marginBottom: 14 }}>{episode.content}</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+          {DISEASE_DEFS.map(d => (
+            <button key={d.key} onClick={() => toggle(d.label)} style={{
+              padding: '5px 11px', borderRadius: 999, border: '1px solid #ccc', fontSize: 12, cursor: 'pointer',
+              background: selected.has(d.label) ? '#222' : '#fff', color: selected.has(d.label) ? '#fff' : '#222',
+            }}>{d.label}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => onSave(Array.from(selected))} disabled={busy} style={{
+            padding: '8px 16px', borderRadius: 6, border: '1px solid #222', background: '#222',
+            color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: busy ? 0.6 : 1,
+          }}>{busy ? '저장 중...' : '저장'}</button>
+          <button type="button" onClick={onClose} style={{
+            padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#fff',
+            color: '#222', fontSize: 13, cursor: 'pointer',
+          }}>취소</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 채널/병명 탭 공용 버튼 — ShoppingFoodView.js의 TabButton과 동일한 스타일.
 function TabButton({ label, count, active, onClick }) {
   return (
@@ -139,13 +226,52 @@ function TabButton({ label, count, active, onClick }) {
   );
 }
 
-function EpisodeRow({ ep }) {
+const actionBtnStyle = {
+  padding: '3px 8px', fontSize: 11, borderRadius: 6, border: '1px solid #ccc',
+  background: '#fff', color: '#222', cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
+};
+
+// 병명 탭 안의 회차 한 줄. 프로그램 단위로만 알던 다시보기 링크(info.replay_url)를 회차 행에서도
+// 바로 열 수 있게 하고, 분류를 잘못 잡았거나 '기타'로 빠진 회차를 그 자리에서 수정/삭제할 수 있게
+// 관리 버튼 3개(바로가기/분류수정/삭제)를 붙였다 — 채널별 보기의 삭제(askDelete)와는 별개로
+// 여기는 회차 단위 삭제/수정이다.
+// 블로그 소재로 이미 썼는지/영상을 사람이 직접 확인했는지는 분류(disease_tags)와 별개로
+// 진행 상황을 체크하는 용도라서 회차 행마다 즉시 토글되는 체크박스로 둔다 — 삭제/분류수정과
+// 달리 확인 모달 없이 클릭 한 번으로 바로 저장한다(자주 반복하는 단순 체크 작업이라서).
+function StatusCheckbox({ checked, onChange, label }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: '#444', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      <input type="checkbox" checked={!!checked} onChange={onChange} style={{ cursor: 'pointer' }} />
+      {label}
+    </label>
+  );
+}
+
+function EpisodeRow({ ep, info, onEdit, onDelete, onToggleBlogUsed, onToggleVideoVerified }) {
+  const canWatch = info?.has_replay && info?.replay_url;
   return (
     <tr style={{ borderBottom: '1px solid #eee' }}>
       <td style={{ padding: '6px', color: '#888', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.air_date || '-'}</td>
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.channel}</td>
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.program_name}<span style={{ color: '#aaa' }}> {ep.episode_no}회</span></td>
       <td style={{ padding: '6px' }}>{ep.content}</td>
+      <td style={{ padding: '6px', verticalAlign: 'top' }}>
+        <StatusCheckbox checked={ep.blog_used} onChange={() => onToggleBlogUsed(ep)} label="블로그 사용완료" />
+      </td>
+      <td style={{ padding: '6px', verticalAlign: 'top' }}>
+        <StatusCheckbox checked={ep.video_verified} onChange={() => onToggleVideoVerified(ep)} label="영상확인완료" />
+      </td>
+      <td style={{ padding: '6px', verticalAlign: 'top' }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {canWatch ? (
+            <a href={info.replay_url} target="_blank" rel="noreferrer" style={{ ...actionBtnStyle, borderColor: '#93c5fd', color: '#2563eb' }}>▶ 바로가기</a>
+          ) : (
+            <span style={{ ...actionBtnStyle, color: '#bbb', cursor: 'default' }}>다시보기 없음</span>
+          )}
+          <button onClick={() => onEdit(ep)} style={actionBtnStyle}>분류수정</button>
+          <button onClick={() => onDelete(ep)} style={{ ...actionBtnStyle, borderColor: '#fecaca', color: '#dc2626' }}>삭제</button>
+        </div>
+      </td>
     </tr>
   );
 }
@@ -153,7 +279,7 @@ function EpisodeRow({ ep }) {
 // 병명 탭 안에서는 채널·프로그램 구분 없이 모든 회차를 방영일 최신순으로 한 줄씩 보여준다.
 // (사용자가 실제로 원하는 건 "이 병명에 뭐가 있나"이지 "어느 채널이 뭘 방송했나"가 아니라서,
 // 채널/프로그램은 각 행의 부가 정보로만 남긴다 — 2026-07-25 인계 메모 참고.)
-function DiseaseTable({ episodes }) {
+function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onToggleBlogUsed, onToggleVideoVerified }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
@@ -162,12 +288,19 @@ function DiseaseTable({ episodes }) {
           <th style={{ padding: '6px', width: 70 }}>채널</th>
           <th style={{ padding: '6px', width: 160 }}>프로그램</th>
           <th style={{ padding: '6px' }}>내용</th>
+          <th style={{ padding: '6px', width: 90 }}>블로그</th>
+          <th style={{ padding: '6px', width: 90 }}>영상확인</th>
+          <th style={{ padding: '6px', width: 200 }}>관리</th>
         </tr>
       </thead>
       <tbody>
-        {episodes.map(ep => <EpisodeRow key={ep.id} ep={ep} />)}
+        {episodes.map(ep => (
+          <EpisodeRow key={ep.id} ep={ep} info={infoMap?.get(`${ep.channel}|${ep.program_name}`)}
+            onEdit={onEdit} onDelete={onDelete}
+            onToggleBlogUsed={onToggleBlogUsed} onToggleVideoVerified={onToggleVideoVerified} />
+        ))}
         {episodes.length === 0 && (
-          <tr><td colSpan={4} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
+          <tr><td colSpan={7} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
         )}
       </tbody>
     </table>
@@ -197,10 +330,15 @@ export default function HealthArchiveView() {
   const [confirm, setConfirm] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
+  const [editingEp, setEditingEp] = useState(null); // 병명 탭 — 분류수정 대상 회차
+  const [editBusy, setEditBusy] = useState(false);
+  const [epConfirm, setEpConfirm] = useState(null); // 병명 탭 — 삭제 확인 대상 회차
+  const [epConfirmBusy, setEpConfirmBusy] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags'),
+      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified'),
       fetchAllPages('tvdb_program_info', 'channel, program_name, replay_url, has_replay'),
     ]).then(([episodeRows, infoRows]) => {
       if (cancelled) return;
@@ -316,6 +454,45 @@ export default function HealthArchiveView() {
     setConfirm(null);
   }
 
+  // 병명 탭 — 회차 하나의 disease_tags를 직접 고쳐 저장. rows 안의 해당 행만 갱신하면
+  // byDisease가 자동으로 다시 계산되어 탭 소속이 즉시 반영된다.
+  async function handleSaveCategories(newLabels) {
+    if (!editingEp) return;
+    setEditBusy(true);
+    const disease_tags = newLabels.length > 0 ? newLabels : null;
+    const { error } = await supabase.from('tvdb_program_episodes').update({ disease_tags }).eq('id', editingEp.id);
+    setEditBusy(false);
+    if (error) { alert('저장 실패: ' + error.message); return; }
+    setRows(prev => prev.map(r => (r.id === editingEp.id ? { ...r, disease_tags } : r)));
+    setEditingEp(null);
+  }
+
+  // 병명 탭 — 회차 자체를 삭제(원본 수집 데이터 오류 등). 채널별 보기의 프로그램 삭제와 달리
+  // tvdb_program_episodes 행 하나만 지운다(tvdb_program_info는 건드리지 않음).
+  async function handleConfirmDeleteEpisode() {
+    if (!epConfirm) return;
+    setEpConfirmBusy(true);
+    const { error } = await supabase.from('tvdb_program_episodes').delete().eq('id', epConfirm.id);
+    setEpConfirmBusy(false);
+    if (error) { alert('삭제 실패: ' + error.message); return; }
+    setRows(prev => prev.filter(r => r.id !== epConfirm.id));
+    setEpConfirm(null);
+  }
+
+  async function handleToggleBlogUsed(ep) {
+    const blog_used = !ep.blog_used;
+    const { error } = await supabase.from('tvdb_program_episodes').update({ blog_used }).eq('id', ep.id);
+    if (error) { alert('저장 실패: ' + error.message); return; }
+    setRows(prev => prev.map(r => (r.id === ep.id ? { ...r, blog_used } : r)));
+  }
+
+  async function handleToggleVideoVerified(ep) {
+    const video_verified = !ep.video_verified;
+    const { error } = await supabase.from('tvdb_program_episodes').update({ video_verified }).eq('id', ep.id);
+    if (error) { alert('저장 실패: ' + error.message); return; }
+    setRows(prev => prev.map(r => (r.id === ep.id ? { ...r, video_verified } : r)));
+  }
+
   if (loading) return <p>불러오는 중...</p>;
 
   const programs = byChannel[activeChannel] || [];
@@ -349,7 +526,16 @@ export default function HealthArchiveView() {
             ))}
             {diseaseKeys.length === 0 && <span style={{ color: '#888', fontSize: 13 }}>수집된 회차가 없습니다.</span>}
           </div>
-          {activeDisease && <DiseaseTable episodes={byDisease[activeDisease] || []} />}
+          {activeDisease && (
+            <DiseaseTable
+              episodes={byDisease[activeDisease] || []}
+              infoMap={infoMap}
+              onEdit={setEditingEp}
+              onDelete={setEpConfirm}
+              onToggleBlogUsed={handleToggleBlogUsed}
+              onToggleVideoVerified={handleToggleVideoVerified}
+            />
+          )}
         </div>
       )}
 
@@ -410,6 +596,9 @@ export default function HealthArchiveView() {
           <ConfirmModal confirm={confirm} onConfirm={handleConfirmDelete} onCancel={() => setConfirm(null)} busy={confirmBusy} />
         </div>
       )}
+
+      <CategoryEditModal episode={editingEp} onSave={handleSaveCategories} onClose={() => setEditingEp(null)} busy={editBusy} />
+      <EpisodeDeleteConfirm episode={epConfirm} onConfirm={handleConfirmDeleteEpisode} onCancel={() => setEpConfirm(null)} busy={epConfirmBusy} />
     </div>
   );
 }
