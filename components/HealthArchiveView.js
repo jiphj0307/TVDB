@@ -677,15 +677,13 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
         )}
       </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
-        <StatusCheckbox checked={ep.blog_used} onChange={() => onToggleBlogUsed(ep)} label="블로그" />
-      </td>
-      <td style={{ padding: '6px', verticalAlign: 'top' }}>
-        <StatusCheckbox checked={ep.video_verified} onChange={() => onToggleVideoVerified(ep)} label="영상" />
-      </td>
-      <td style={{ padding: '6px', verticalAlign: 'top' }}>
-        {ep.links && ep.links.length > 0 && (
-          <StatusCheckbox checked={ep.clip_verified} onChange={() => onToggleClipVerified(ep)} label="클립확인" />
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <StatusCheckbox checked={ep.blog_used} onChange={() => onToggleBlogUsed(ep)} label="블로그" />
+          <StatusCheckbox checked={ep.video_verified} onChange={() => onToggleVideoVerified(ep)} label="영상" />
+          {ep.links && ep.links.length > 0 && (
+            <StatusCheckbox checked={ep.clip_verified} onChange={() => onToggleClipVerified(ep)} label="클립확인" />
+          )}
+        </div>
       </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -720,9 +718,7 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
           <th style={{ padding: '6px', width: 70 }}>채널</th>
           <th style={{ padding: '6px', width: 160 }}>프로그램</th>
           <th style={{ padding: '6px' }}>내용</th>
-          <th style={{ padding: '6px', width: 90 }}>블로그</th>
-          <th style={{ padding: '6px', width: 90 }}>영상확인</th>
-          <th style={{ padding: '6px', width: 90 }}>클립확인</th>
+          <th style={{ padding: '6px', width: 90 }}>상태</th>
           <th style={{ padding: '6px', width: 250 }}>관리</th>
         </tr>
       </thead>
@@ -734,7 +730,7 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
             onToggleClipVerified={onToggleClipVerified} />
         ))}
         {episodes.length === 0 && (
-          <tr><td colSpan={8} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
+          <tr><td colSpan={6} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
         )}
       </tbody>
     </table>

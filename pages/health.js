@@ -1,4 +1,3 @@
-
 import Head from 'next/head';
 import { AdSlot } from '../components/AdSlot';
 import { useAdSlot } from '../lib/AdSlotsContext';
@@ -6,17 +5,14 @@ import { Nav } from '../components/Nav';
 import HealthArchiveView from '../components/HealthArchiveView';
 import { loadHealthData } from '../lib/loadHealthTree';
 
-// food.js와 동일한 이유로(9천여 건을 방문할 때마다 브라우저에서 훑으면 느림) 여기서 서버가
-// 미리 받아둔 걸 정적으로 내려준다(ISR) — disease_tags는 이미 SQL로 백필돼 있어서
-// loadFoodTree.js의 classifyNewRows() 같은 분류 단계 없이 그대로 읽기만 한다.
-// food.js(홈쇼핑, 하루에도 여러 번 새 방송이 들어옴)는 10분마다 재생성하지만, 이 아카이브는
-// 새 회차가 자동으로 안 들어오고 수동 편집(체크박스/분류수정/삭제)도 그 세션엔 클라이언트
-// 상태로 바로 반영되니 그렇게 자주 재생성할 필요가 없다 — 1시간으로 늘림. 그 사이 다른
-// 세션이 바꾼 내용을 더 빨리 보고 싶으면 화면의 "🔄 새로고침" 버튼으로 즉시 받을 수 있다.
-// 관리자 전용 제한은 2026-07-25 디버깅 편의를 위해 풀어둔 상태 유지(누구나 접근 가능).
-export async function getStaticProps() {
+// 원래 ISR(1시간 캐시)이었으나, 체크박스(블로그/영상확인/클립확인)를 누른 직후 브라우저를
+// 그냥 새로고침(F5)하면 최대 1시간 전 스냅샷이 다시 보여서 "체크한 게 사라졌다"로 오인되는
+// 문제가 있었다(2026-07-26, 실제로는 저장은 매번 정상적으로 되고 있었음 — 캐시만 문제).
+// 매 요청마다 직접 조회(SSR)로 바꿔서 새로고침해도 항상 DB의 최신 상태 그대로 보이게 한다.
+// 9천여 건을 매번 서버에서 다시 훑긴 하지만 관리자용 내부 페이지라 트래픽이 낮아 괜찮다.
+export async function getServerSideProps() {
   const { rows, infoRows } = await loadHealthData();
-  return { props: { initialRows: rows, initialInfoRows: infoRows, generatedAt: new Date().toISOString() }, revalidate: 3600 };
+  return { props: { initialRows: rows, initialInfoRows: infoRows, generatedAt: new Date().toISOString() } };
 }
 
 export default function HealthPage({ initialRows, initialInfoRows, generatedAt }) {
