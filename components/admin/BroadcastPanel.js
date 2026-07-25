@@ -58,37 +58,6 @@ function HealthBadge({ isHealth }) {
   );
 }
 
-// 링크를 여러 개 넣고 뺄 수 있는 반복 입력 UI — MemoImageModal(건강 아카이브)의 "링크" 패턴과 동일.
-// 클립 링크(회차별 예고편/하이라이트 스트림 페이지)를 편집할 때 재사용한다.
-function RepeatUrlField({ label, placeholder, urls, onChange }) {
-  const list = urls || [];
-  function update(idx, value) {
-    onChange(list.map((u, i) => (i === idx ? value : u)));
-  }
-  function add() {
-    onChange([...list, '']);
-  }
-  function remove(idx) {
-    onChange(list.filter((_, i) => i !== idx));
-  }
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <label style={S.label}>{label}</label>
-      {list.map((url, idx) => (
-        <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-          <input placeholder={placeholder} value={url}
-            onChange={e => update(idx, e.target.value)} style={{ ...S.input, flex: 1 }} />
-          <button type="button" onClick={() => remove(idx)} title="삭제" style={{
-            flexShrink: 0, padding: '0 12px', borderRadius: 6, border: '1px solid #fecaca',
-            background: '#fff', color: '#dc2626', fontSize: 14, cursor: 'pointer',
-          }}>−</button>
-        </div>
-      ))}
-      <button type="button" onClick={add} style={{ ...S.btnGhost, padding: '4px 12px', fontSize: 12 }}>+ 링크 추가</button>
-    </div>
-  );
-}
-
 // "수정" 버튼을 눌렀을 때 맨 위 등록 폼으로 스크롤시키던 방식은, 목록 깊숙이 스크롤해서 보고 있던
 // 사용자 입장에선 "여기서 바로 안 되고 왜 위로 튕기지?"로 느껴진다. 그 자리에서 바로 편집할 수 있게
 // 같은 필드 구성의 모달로 뺐다.
@@ -240,41 +209,6 @@ function EpisodeModal({ programName, episodes, onClose, onToggle }) {
   );
 }
 
-// 편성표(schedule)의 회차 행 하나에 클립 링크(예고편/하이라이트 스트림 페이지)를 여러 개 기록해두는
-// 모달. tvdb_program_info의 replay_url(시리즈 전체 VOD 랜딩 페이지, 프로그램당 하나)과 달리, 이건
-// tvdb_program(실제 편성 기록, 회차 하나당 한 행)에 붙는다 — 회차마다 예고편/클립 URL이 따로 있고
-// (예: TV조선 "알콩달콩 334회"의 클립 2개), 나중에 화면 캡처(ffmpeg 프레임 추출) 작업을 할 때 바로
-// 찾아 쓸 수 있어야 하므로 회차 단위로 저장해야 의미가 있다 — 프로그램 단위로 뭉뚱그리면 어느
-// 회차 것인지 알 수 없어져서 처음엔 잘못 설계했었다(2026-07-26 정정).
-function ClipEditModal({ row, urls, onChange, onSave, onCancel, saving }) {
-  if (!row) return null;
-  return (
-    <div onClick={onCancel} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16,
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 480, width: '100%',
-        maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>회차 클립 링크</div>
-          <button onClick={onCancel} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
-        </div>
-        <p style={{ fontSize: 12, color: '#8aaa8a', margin: '4px 0 14px' }}>{row.program_name} · {row.broadcast_date}</p>
-        <RepeatUrlField label="클립/예고편 링크 (여러 개 가능)" placeholder="https://... (예고편/클립 스트림 페이지)"
-          urls={urls} onChange={onChange} />
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onSave} disabled={saving} style={{ ...S.btn(), opacity: saving ? 0.6 : 1 }}>
-            {saving ? '저장 중...' : '저장'}
-          </button>
-          <button type="button" onClick={onCancel} style={S.btnGhost}>취소</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // 삭제는 되돌릴 수 없으니 버튼 클릭 즉시 지우지 않고 이 모달로 한 번 더 확인시킨다.
 function ConfirmModal({ confirm, onConfirm, onCancel, busy }) {
   if (!confirm) return null;
@@ -319,11 +253,6 @@ export default function BroadcastPanel({ showToast }) {
   // 기존 항목 "수정"은 이 상태로 뜨는 모달에서 처리한다(위 form/handleSubmit은 신규 등록 전용).
   const [editForm, setEditForm] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
-
-  // 편성표 회차 행의 클립 링크 편집 모달 상태.
-  const [clipModalRow, setClipModalRow] = useState(null); // tvdb_program 행(id, program_name, broadcast_date, clip_urls)
-  const [clipModalUrls, setClipModalUrls] = useState([]);
-  const [clipSaving, setClipSaving] = useState(false);
 
   // 삭제 확인 모달 상태. { type: 'missing' | 'registered', name } | null
   const [confirm, setConfirm] = useState(null);
@@ -399,7 +328,7 @@ export default function BroadcastPanel({ showToast }) {
     const fromDate = weekAgo.toISOString().slice(0, 10);
 
     const [{ data: sched }, { data: info }, { data: noteRow }, { data: epRows }, { data: ignoreRows }] = await Promise.all([
-      supabase.from('tvdb_program').select('id, broadcast_date, time_start, program_name, genre, clip_urls')
+      supabase.from('tvdb_program').select('id, broadcast_date, time_start, program_name, genre')
         .eq('channel', channel).gte('broadcast_date', fromDate)
         .order('broadcast_date', { ascending: true }).order('time_start', { ascending: true }),
       supabase.from('tvdb_program_info').select('*').eq('channel', channel),
@@ -475,25 +404,6 @@ export default function BroadcastPanel({ showToast }) {
       replay_url: row.replay_url || '',
       is_health_content: !!row.is_health_content,
     });
-  }
-
-  function openClipModal(row) {
-    setClipModalRow(row);
-    setClipModalUrls(row.clip_urls || []);
-  }
-
-  async function handleSaveClipUrls() {
-    if (!clipModalRow) return;
-    setClipSaving(true);
-    const cleaned = clipModalUrls.map(u => u.trim()).filter(Boolean);
-    const { error } = await supabase.from('tvdb_program')
-      .update({ clip_urls: cleaned.length > 0 ? cleaned : null })
-      .eq('id', clipModalRow.id);
-    setClipSaving(false);
-    if (error) { showToast('❌ 저장 실패: ' + error.message); return; }
-    showToast('✅ 클립 링크 저장 완료');
-    setSchedule(prev => prev.map(r => (r.id === clipModalRow.id ? { ...r, clip_urls: cleaned.length > 0 ? cleaned : null } : r)));
-    setClipModalRow(null);
   }
 
   function askDeleteMissing(name) {
@@ -698,7 +608,6 @@ export default function BroadcastPanel({ showToast }) {
                     <tbody>
                       {rowsOfSelectedDate.map(row => {
                         const info = infoRows.find(i => row.program_name.startsWith(i.program_name));
-                        const clipCount = row.clip_urls ? row.clip_urls.length : 0;
                         return (
                         <tr key={row.id} style={{ borderBottom: '1px solid #eef6ee' }}>
                           <td style={{ padding: '4px 6px', width: 70, color: '#8aaa8a' }}>{row.time_start?.slice(0, 5)}</td>
@@ -709,14 +618,6 @@ export default function BroadcastPanel({ showToast }) {
                           <td style={{ padding: '4px 6px', color: '#4b6e4b' }}>{row.genre}</td>
                           <td style={{ padding: '4px 6px', color: '#8aaa8a', fontSize: 12 }}>
                             {info ? [info.air_day, info.air_time].filter(Boolean).join(' ') || '-' : ''}
-                          </td>
-                          <td style={{ padding: '4px 6px', textAlign: 'right' }}>
-                            <button onClick={() => openClipModal(row)} style={{
-                              padding: '3px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
-                              border: clipCount > 0 ? '1px solid #c4b5fd' : '1px solid #d1e8d1',
-                              background: clipCount > 0 ? '#ede9fe' : '#fff',
-                              color: clipCount > 0 ? '#7c3aed' : '#8aaa8a',
-                            }}>🎬 클립{clipCount > 0 ? ` ${clipCount}` : ''}</button>
                           </td>
                         </tr>
                         );
@@ -905,8 +806,6 @@ export default function BroadcastPanel({ showToast }) {
       <EditModal form={editForm} setForm={setEditForm} onSave={handleEditSubmit} onCancel={() => setEditForm(null)} saving={editSaving} />
       <EpisodeModal programName={expandedProgram} episodes={episodes[expandedProgram]}
         onClose={() => setExpandedProgram(null)} onToggle={(ep) => toggleEpisodeSelected(expandedProgram, ep)} />
-      <ClipEditModal row={clipModalRow} urls={clipModalUrls} onChange={setClipModalUrls}
-        onSave={handleSaveClipUrls} onCancel={() => setClipModalRow(null)} saving={clipSaving} />
       <ConfirmModal confirm={confirm} onConfirm={handleConfirmDelete} onCancel={() => setConfirm(null)} busy={confirmBusy} />
     </div>
   );

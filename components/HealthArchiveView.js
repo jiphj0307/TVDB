@@ -188,8 +188,10 @@ function EpisodeDeleteConfirm({ episode, onConfirm, onCancel, busy }) {
 // 선택된 것만 배열로 저장한다(빈 배열이면 '기타'로 돌아감).
 function CategoryEditModal({ episode, onSave, onClose, busy }) {
   const [selected, setSelected] = useState(new Set());
+  const [newLabel, setNewLabel] = useState('');
   useEffect(() => {
     setSelected(new Set(episode?.disease_tags || []));
+    setNewLabel('');
   }, [episode]);
   if (!episode) return null;
   function toggle(label) {
@@ -199,6 +201,18 @@ function CategoryEditModal({ episode, onSave, onClose, busy }) {
       return next;
     });
   }
+  // DISEASE_DEFS(diseaseClassifier.js에 코드로 박혀있는 28개 고정 카테고리)에 없는 이름을
+  // 직접 타이핑해서 추가하는 기능. 새로 추가한 라벨은 DISEASE_DEFS에 없어도 selected에는
+  // 그대로 들어가고, 저장하면 disease_tags 배열에 문자열로 저장된다 — 병명 탭 목록(diseaseKeys)은
+  // DISEASE_DEFS가 아니라 실제 데이터에 쓰인 disease_tags 값을 그대로 모아서 만들기 때문에
+  // (HealthArchiveView의 byDisease 참고) 코드 수정/배포 없이도 저장 즉시 새 탭으로 나타난다.
+  function addCustomLabel() {
+    const label = newLabel.trim();
+    if (!label) return;
+    setSelected(prev => new Set(prev).add(label));
+    setNewLabel('');
+  }
+  const customLabels = Array.from(selected).filter(label => !DISEASE_DEFS.some(d => d.label === label));
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
@@ -214,13 +228,29 @@ function CategoryEditModal({ episode, onSave, onClose, busy }) {
         </div>
         <p style={{ fontSize: 12, color: '#888', margin: '4px 0 2px' }}>[{episode.channel}] {episode.program_name} {episode.episode_no}회</p>
         <p style={{ fontSize: 12.5, color: '#444', marginBottom: 14 }}>{episode.content}</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
           {DISEASE_DEFS.map(d => (
             <button key={d.key} onClick={() => toggle(d.label)} style={{
               padding: '5px 11px', borderRadius: 999, border: '1px solid #ccc', fontSize: 12, cursor: 'pointer',
               background: selected.has(d.label) ? '#222' : '#fff', color: selected.has(d.label) ? '#fff' : '#222',
             }}>{d.label}</button>
           ))}
+          {customLabels.map(label => (
+            <button key={label} onClick={() => toggle(label)} style={{
+              padding: '5px 11px', borderRadius: 999, border: '1px solid #7c3aed', fontSize: 12, cursor: 'pointer',
+              background: '#7c3aed', color: '#fff',
+            }}>{label} ✕</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+          <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomLabel(); } }}
+            placeholder="새 카테고리 이름 입력"
+            style={{ flex: 1, boxSizing: 'border-box', padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 12.5, fontFamily: 'inherit' }} />
+          <button type="button" onClick={addCustomLabel} style={{
+            flexShrink: 0, padding: '6px 14px', borderRadius: 6, border: '1px solid #7c3aed',
+            background: '#f5f3ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+          }}>+ 카테고리 추가</button>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => onSave(Array.from(selected))} disabled={busy} style={{
