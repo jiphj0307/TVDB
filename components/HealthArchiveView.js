@@ -658,6 +658,7 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
   const canWatch = info?.has_replay && info?.replay_url;
   return (
     <tr style={{ borderBottom: '1px solid #eee' }}>
+      <td style={{ padding: '6px', color: '#aaa', whiteSpace: 'nowrap', verticalAlign: 'top', fontSize: 11.5 }}>#{ep.id}</td>
       <td style={{ padding: '6px', color: '#888', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.air_date || '-'}</td>
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.channel}</td>
       <td style={{ padding: '6px', verticalAlign: 'top', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{ep.program_name}<span style={{ color: '#aaa' }}> {ep.episode_no}회</span></td>
@@ -714,6 +715,7 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
         <tr style={{ textAlign: 'left', borderBottom: '2px solid #222', color: '#888' }}>
+          <th style={{ padding: '6px', width: 60 }}>번호</th>
           <th style={{ padding: '6px', width: 90 }}>방영일</th>
           <th style={{ padding: '6px', width: 70 }}>채널</th>
           <th style={{ padding: '6px', width: 160 }}>프로그램</th>
@@ -730,7 +732,7 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
             onToggleClipVerified={onToggleClipVerified} />
         ))}
         {episodes.length === 0 && (
-          <tr><td colSpan={6} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
+          <tr><td colSpan={7} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
         )}
       </tbody>
     </table>
