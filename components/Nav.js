@@ -1,4 +1,3 @@
-
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
@@ -10,6 +9,7 @@ const LINKS = [
   { href: '/program', label: '📺 일반방송' },
   { href: '/food', label: '🍑 과일 · 건기식 · 식품', adminOnly: true },
   { href: '/health', label: '🩺 건강 · 생활 · 먹거리' },
+  { href: '/capture', label: '🖥️ 화면 캡처' },
 ];
 
 export function Nav() {
