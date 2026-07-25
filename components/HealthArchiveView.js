@@ -3,6 +3,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { DISEASE_DEFS, OTHER_LABEL } from '../lib/diseaseClassifier';
 
+// 병명 탭 하나에 회차가 수백~1200건 넘게 몰리는 경우(비만·다이어트 1247, 고혈압 886, 암 728 등)가
+// 있어서, 탭을 누를 때마다 전부 한 번에 테이블로 그리면 DOM 노드가 순식간에 수만 개로 불어나
+// 탭 전환이 눈에 띄게 버벅였다. 그래서 처음엔 최신순으로 PAGE_SIZE개만 그리고, "더 보기"를
+// 누를 때만 다음 묶음을 추가로 그리는 방식으로 바꿨다 — 데이터 자체(byDisease)는 그대로 전부
+// 갖고 있고, 화면에 그리는 행 수만 점진적으로 늘리는 것이라 별도 서버 요청은 필요 없다.
+const PAGE_SIZE = 100;
+
 // Supabase REST가 한 번에 내려주는 행 수를 서버 설정상 1000행으로 잘라버리기 때문에,
 // tvdb_program_episodes 전체(9천여 건)를 다 훑으려면 끝까지 페이지네이션해야 한다.
 // 최초 로드는 이제 pages/health.js의 getStaticProps(lib/loadHealthTree.js)가 서버에서
@@ -286,6 +293,8 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onToggleBlogUsed, onToggleVide
 // 병명 탭 안에서는 채널·프로그램 구분 없이 모든 회차를 방영일 최신순으로 한 줄씩 보여준다.
 // (사용자가 실제로 원하는 건 "이 병명에 뭐가 있나"이지 "어느 채널이 뭘 방송했나"가 아니라서,
 // 채널/프로그램은 각 행의 부가 정보로만 남긴다 — 2026-07-25 인계 메모 참고.)
+// episodes는 이미 호출부(HealthArchiveView)에서 PAGE_SIZE만큼 잘라서 넘어온다 — 여기서는
+// 받은 것만 그대로 그린다.
 function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onToggleBlogUsed, onToggleVideoVerified }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -337,6 +346,10 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
 
   const [activeDisease, setActiveDisease] = useState('');
   const [activeChannel, setActiveChannel] = useState('');
+
+  // 병명 탭 하나에 몰린 회차를 한 번에 다 그리면 탭 전환이 느려져서(최대 1247건), 처음엔
+  // PAGE_SIZE개(최신순)만 그리고 "더 보기"로 점진적으로 늘린다. 탭을 바꾸면 다시 처음부터.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const [opened, setOpened] = useState(null); // { channel, program_name } — 채널별 보기 전용
   const [episodes, setEpisodes] = useState(null);
@@ -396,6 +409,12 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   useEffect(() => {
     if (!activeDisease && diseaseKeys.length > 0) setActiveDisease(diseaseKeys[0]);
   }, [diseaseKeys, activeDisease]);
+
+  // 병명 탭을 바꿀 때마다 다시 최신 PAGE_SIZE건부터 보여준다(이전 탭에서 눌러둔 "더 보기"가
+  // 다음 탭까지 이어지지 않도록).
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [activeDisease]);
 
   const byChannel = useMemo(() => {
     const map = {};
@@ -497,6 +516,8 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   }
 
   const programs = byChannel[activeChannel] || [];
+  const activeDiseaseEpisodes = byDisease[activeDisease] || [];
+  const visibleDiseaseEpisodes = activeDiseaseEpisodes.slice(0, visibleCount);
 
   return (
     <div>
@@ -536,14 +557,26 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
             {diseaseKeys.length === 0 && <span style={{ color: '#888', fontSize: 13 }}>수집된 회차가 없습니다.</span>}
           </div>
           {activeDisease && (
-            <DiseaseTable
-              episodes={byDisease[activeDisease] || []}
-              infoMap={infoMap}
-              onEdit={setEditingEp}
-              onDelete={setEpConfirm}
-              onToggleBlogUsed={handleToggleBlogUsed}
-              onToggleVideoVerified={handleToggleVideoVerified}
-            />
+            <>
+              <DiseaseTable
+                episodes={visibleDiseaseEpisodes}
+                infoMap={infoMap}
+                onEdit={setEditingEp}
+                onDelete={setEpConfirm}
+                onToggleBlogUsed={handleToggleBlogUsed}
+                onToggleVideoVerified={handleToggleVideoVerified}
+              />
+              {activeDiseaseEpisodes.length > visibleDiseaseEpisodes.length && (
+                <div style={{ textAlign: 'center', margin: '14px 0' }}>
+                  <button onClick={() => setVisibleCount(c => c + PAGE_SIZE)} style={{
+                    padding: '8px 20px', borderRadius: 999, border: '1px solid #ccc', background: '#fff',
+                    color: '#222', fontSize: 13, cursor: 'pointer',
+                  }}>
+                    더 보기 ({activeDiseaseEpisodes.length - visibleDiseaseEpisodes.length}건 남음)
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
