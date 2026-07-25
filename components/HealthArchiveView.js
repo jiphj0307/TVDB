@@ -1,5 +1,4 @@
-
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { DISEASE_DEFS, OTHER_LABEL } from '../lib/diseaseClassifier';
 
@@ -12,6 +11,14 @@ const PAGE_SIZE = 100;
 
 // 메모/이미지 업로드용 Storage 버킷(공개 버킷으로 미리 만들어둬야 함 — 아래 안내 참고).
 const STORAGE_BUCKET = 'tvdb-episode-images';
+
+// 화면 캡처로 찍은 이미지 파일명에 쓰는 타임스탬프 — pages/capture.js와 동일한 포맷.
+function captureTimestamp() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+const CAPTURE_HANDLE = 10;
 
 // Supabase REST가 한 번에 내려주는 행 수를 서버 설정상 1000행으로 잘라버리기 때문에,
 // tvdb_program_episodes 전체(9천여 건)를 다 훑으려면 끝까지 페이지네이션해야 한다.
@@ -233,21 +240,39 @@ function CategoryEditModal({ episode, onSave, onClose, busy }) {
 // 회차 하나에 자유 메모 + 링크 여러 개 + 이미지 여러 장을 등록하는 모달. 이미지는 STORAGE_BUCKET
 // (공개 버킷)에 업로드하고 공개 URL 배열만 tvdb_program_episodes.image_urls에 저장한다(파일
 // 자체는 DB가 아니라 Storage에 있음). 기존에 저장돼있던 이미지는 keptUrls로 유지/개별 삭제하고,
-// 새 이미지는 링크와 동일한 패턴으로 "+"를 누를 때마다 슬롯이 하나씩 늘어나며, 각 슬롯에서 파일을
-// 고르면 즉시 로컬 미리보기(URL.createObjectURL)만 보여주고 실제 업로드는 "저장"을 눌렀을 때
-// 한 번에 한다 — 모달 열고 파일만 고른 채 닫으면 업로드가 안 일어나야 하므로.
+// 새 이미지는 두 가지 방법으로 슬롯에 추가할 수 있다: (1) 기존처럼 파일 선택 "+ 이미지 추가",
+// (2) 신규 "📸 화면 캡처로 추가" — pages/capture.js와 동일한 getDisplayMedia+캔버스 크롭 로직을
+// 이 모달 안에 그대로 넣어서, "바로가기"로 다시보기를 새 탭에서 재생해두고 돌아와 화면을 캡처하면
+// 로컬에 PNG로 다운받았다가 파일 선택기로 다시 올리는 왕복 없이 캡처 결과가 바로 newSlots에
+// 들어간다. 두 방법 모두 최종적으로 동일한 { file, preview } 모양이라 저장(handleSaveMemoImage)
+// 쪽 로직은 손댈 필요가 없다.
 function MemoImageModal({ episode, onSave, onClose, busy }) {
   const [memo, setMemo] = useState('');
   const [links, setLinks] = useState([]);
   const [keptUrls, setKeptUrls] = useState([]); // 기존에 저장돼있던 이미지 중 삭제 안 한 것
   const [newSlots, setNewSlots] = useState([]); // 새로 추가하는 이미지 슬롯 [{ file, preview }]
 
+  // 화면 캡처 단계: null(안 함) | 'sharing'(화면 공유 중, 재생 중인 영상 미리보기) |
+  // 'captured'(프레임 한 장 캡처해서 영역 자르는 중) — capture.js의 상태 흐름과 동일하다.
+  const [captureStep, setCaptureStep] = useState(null);
+  const captureVideoRef = useRef(null);
+  const captureCanvasRef = useRef(null);
+  const captureStreamRef = useRef(null);
+  const captureContainerRef = useRef(null);
+  const [captureNaturalSize, setCaptureNaturalSize] = useState({ w: 0, h: 0 });
+  const [captureDisplaySize, setCaptureDisplaySize] = useState({ w: 0, h: 0 });
+  const [captureRect, setCaptureRect] = useState(null);
+  const captureDragRef = useRef({ mode: null, origin: null, orig: null, start: null });
+
   useEffect(() => {
     setMemo(episode?.memo || '');
     setLinks(episode?.links && episode.links.length > 0 ? episode.links : []);
     setKeptUrls(episode?.image_urls && episode.image_urls.length > 0 ? episode.image_urls : []);
     setNewSlots([]);
+    cancelCapture();
   }, [episode]);
+
+  useEffect(() => () => captureStreamRef.current?.getTracks().forEach(t => t.stop()), []);
 
   if (!episode) return null;
 
@@ -274,13 +299,138 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
     setNewSlots(s => s.filter((_, i) => i !== idx));
   }
 
+  async function startCapture() {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 } });
+      captureStreamRef.current = stream;
+      captureVideoRef.current.srcObject = stream;
+      await captureVideoRef.current.play();
+      setCaptureStep('sharing');
+      stream.getVideoTracks()[0].addEventListener('ended', cancelCapture);
+    } catch (e) {
+      alert('화면 공유를 시작하지 못했습니다: ' + e.message);
+    }
+  }
+
+  function cancelCapture() {
+    captureStreamRef.current?.getTracks().forEach(t => t.stop());
+    captureStreamRef.current = null;
+    setCaptureStep(null);
+    setCaptureRect(null);
+  }
+
+  function captureFrame() {
+    const video = captureVideoRef.current;
+    const w = video.videoWidth, h = video.videoHeight;
+    const canvas = captureCanvasRef.current;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+    const maxW = Math.min(560, window.innerWidth - 96);
+    const scale = Math.min(1, maxW / w);
+    setCaptureNaturalSize({ w, h });
+    setCaptureDisplaySize({ w: Math.round(w * scale), h: Math.round(h * scale) });
+    setCaptureRect(null);
+    setCaptureStep('captured');
+  }
+
+  function retakeCapture() {
+    setCaptureStep('sharing');
+    setCaptureRect(null);
+  }
+
+  function hitTest(x, y, r) {
+    if (!r) return null;
+    const { x1, y1, x2, y2 } = r;
+    const positions = {
+      nw: [x1, y1], n: [(x1 + x2) / 2, y1], ne: [x2, y1],
+      w: [x1, (y1 + y2) / 2], e: [x2, (y1 + y2) / 2],
+      sw: [x1, y2], s: [(x1 + x2) / 2, y2], se: [x2, y2],
+    };
+    for (const [name, [hx, hy]] of Object.entries(positions)) {
+      if (Math.abs(x - hx) <= CAPTURE_HANDLE && Math.abs(y - hy) <= CAPTURE_HANDLE) return name;
+    }
+    if (x1 < x && x < x2 && y1 < y && y < y2) return 'move';
+    return null;
+  }
+  function getCapturePos(e) {
+    const box = captureContainerRef.current.getBoundingClientRect();
+    return { x: e.clientX - box.left, y: e.clientY - box.top };
+  }
+  function onCapturePointerDown(e) {
+    const { x, y } = getCapturePos(e);
+    const hit = hitTest(x, y, captureRect);
+    if (!captureRect || !hit) {
+      captureDragRef.current = { mode: 'new', start: { x, y } };
+      setCaptureRect({ x1: x, y1: y, x2: x, y2: y });
+    } else {
+      captureDragRef.current = { mode: hit, origin: { x, y }, orig: captureRect };
+    }
+    e.target.setPointerCapture?.(e.pointerId);
+  }
+  function onCapturePointerMove(e) {
+    const d = captureDragRef.current;
+    if (!d.mode) return;
+    const { x, y } = getCapturePos(e);
+    if (d.mode === 'new') {
+      const { x: sx, y: sy } = d.start;
+      setCaptureRect({ x1: Math.min(sx, x), y1: Math.min(sy, y), x2: Math.max(sx, x), y2: Math.max(sy, y) });
+    } else if (d.mode === 'move') {
+      const dx = x - d.origin.x, dy = y - d.origin.y;
+      const { x1, y1, x2, y2 } = d.orig;
+      setCaptureRect({ x1: x1 + dx, y1: y1 + dy, x2: x2 + dx, y2: y2 + dy });
+    } else {
+      let { x1, y1, x2, y2 } = d.orig;
+      const dx = x - d.origin.x, dy = y - d.origin.y;
+      if (d.mode.includes('n')) y1 += dy;
+      if (d.mode.includes('s')) y2 += dy;
+      if (d.mode.includes('w')) x1 += dx;
+      if (d.mode.includes('e')) x2 += dx;
+      setCaptureRect({ x1: Math.min(x1, x2), y1: Math.min(y1, y2), x2: Math.max(x1, x2), y2: Math.max(y1, y2) });
+    }
+  }
+  function onCapturePointerUp() {
+    captureDragRef.current = { mode: null };
+  }
+
+  // 선택 영역(또는 영역을 안 골랐으면 전체 화면)을 잘라서 곧바로 newSlots에 추가하고 캡처 모드를
+  // 닫는다 — 여기서 만든 File은 기존 "+ 이미지 추가"로 고른 파일과 완전히 같은 모양이라 저장 시
+  // 똑같이 업로드된다.
+  function useCaptured(useRegion) {
+    const canvas = captureCanvasRef.current;
+    let sourceCanvas = canvas;
+    if (useRegion) {
+      if (!captureRect || Math.abs(captureRect.x2 - captureRect.x1) < 5 || Math.abs(captureRect.y2 - captureRect.y1) < 5) {
+        alert('먼저 영역을 드래그로 선택해주세요.');
+        return;
+      }
+      const scaleX = captureNaturalSize.w / captureDisplaySize.w;
+      const scaleY = captureNaturalSize.h / captureDisplaySize.h;
+      const sx = Math.round(captureRect.x1 * scaleX), sy = Math.round(captureRect.y1 * scaleY);
+      const sw = Math.round((captureRect.x2 - captureRect.x1) * scaleX), sh = Math.round((captureRect.y2 - captureRect.y1) * scaleY);
+      const out = document.createElement('canvas');
+      out.width = sw;
+      out.height = sh;
+      out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+      sourceCanvas = out;
+    }
+    sourceCanvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `capture_${captureTimestamp()}.png`, { type: 'image/png' });
+      setNewSlots(s => [...s, { file, preview: URL.createObjectURL(file) }]);
+      cancelCapture();
+    }, 'image/png');
+  }
+
+  const modalMaxWidth = captureStep ? 640 : 480;
+
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: '#fff', borderRadius: 10, padding: 20, maxWidth: 480, width: '100%',
+        background: '#fff', borderRadius: 10, padding: 20, maxWidth: modalMaxWidth, width: '100%',
         maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
@@ -288,6 +438,60 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
           <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#888', lineHeight: 1 }}>✕</button>
         </div>
         <p style={{ fontSize: 12, color: '#888', margin: '4px 0 14px' }}>[{episode.channel}] {episode.program_name} {episode.episode_no}회</p>
+
+        {captureStep && (
+          <div style={{ marginBottom: 18, padding: 12, border: '1px dashed #ccc', borderRadius: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>📸 화면 캡처</span>
+              <button type="button" onClick={cancelCapture} style={{ border: 'none', background: 'none', fontSize: 12.5, color: '#888', cursor: 'pointer' }}>취소</button>
+            </div>
+
+            {captureStep === 'sharing' && (
+              <div>
+                <video ref={captureVideoRef} muted style={{ width: '100%', maxWidth: 560, borderRadius: 8, background: '#000', display: 'block' }} />
+                <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={captureFrame} style={captureBtnPrimary}>캡처(현재 프레임)</button>
+                </div>
+              </div>
+            )}
+
+            {captureStep === 'captured' && (
+              <div>
+                <div ref={captureContainerRef}
+                  onPointerDown={onCapturePointerDown} onPointerMove={onCapturePointerMove} onPointerUp={onCapturePointerUp}
+                  style={{ position: 'relative', width: captureDisplaySize.w, height: captureDisplaySize.h, cursor: 'crosshair', touchAction: 'none' }}>
+                  <canvas ref={captureCanvasRef} style={{ width: captureDisplaySize.w, height: captureDisplaySize.h, borderRadius: 8, display: 'block' }} />
+                  {captureRect && (
+                    <>
+                      <div style={{
+                        position: 'absolute', left: captureRect.x1, top: captureRect.y1,
+                        width: captureRect.x2 - captureRect.x1, height: captureRect.y2 - captureRect.y1,
+                        border: '2px dashed #00c853', background: 'rgba(0,200,83,0.12)', boxSizing: 'border-box',
+                      }} />
+                      {[
+                        [captureRect.x1, captureRect.y1], [(captureRect.x1 + captureRect.x2) / 2, captureRect.y1], [captureRect.x2, captureRect.y1],
+                        [captureRect.x1, (captureRect.y1 + captureRect.y2) / 2], [captureRect.x2, (captureRect.y1 + captureRect.y2) / 2],
+                        [captureRect.x1, captureRect.y2], [(captureRect.x1 + captureRect.x2) / 2, captureRect.y2], [captureRect.x2, captureRect.y2],
+                      ].map(([hx, hy], i) => (
+                        <div key={i} style={{
+                          position: 'absolute', left: hx - CAPTURE_HANDLE / 2, top: hy - CAPTURE_HANDLE / 2,
+                          width: CAPTURE_HANDLE, height: CAPTURE_HANDLE, background: '#00c853', border: '2px solid #fff',
+                          borderRadius: 2, boxShadow: '0 0 2px rgba(0,0,0,0.5)',
+                        }} />
+                      ))}
+                    </>
+                  )}
+                </div>
+                <p style={{ fontSize: 11.5, color: '#888', margin: '8px 0' }}>드래그로 영역을 선택하세요. 선택 없이 전체 화면 그대로 추가할 수도 있어요.</p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => useCaptured(true)} style={captureBtnPrimary}>선택 영역 추가</button>
+                  <button type="button" onClick={() => useCaptured(false)} style={captureBtnSecondary}>전체 화면 추가</button>
+                  <button type="button" onClick={retakeCapture} style={captureBtnSecondary}>다시 캡처</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>메모</label>
         <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={4} placeholder="자유롭게 메모를 남겨주세요"
@@ -337,10 +541,18 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
             </div>
           ))}
         </div>
-        <button type="button" onClick={addImageSlot} style={{
-          marginBottom: 18, padding: '4px 12px', fontSize: 12.5, borderRadius: 6, border: '1px solid #ccc',
-          background: '#fff', color: '#222', cursor: 'pointer',
-        }}>+ 이미지 추가</button>
+        <div style={{ marginBottom: 18, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={addImageSlot} style={{
+            padding: '4px 12px', fontSize: 12.5, borderRadius: 6, border: '1px solid #ccc',
+            background: '#fff', color: '#222', cursor: 'pointer',
+          }}>+ 이미지 추가</button>
+          {!captureStep && (
+            <button type="button" onClick={startCapture} style={{
+              padding: '4px 12px', fontSize: 12.5, borderRadius: 6, border: '1px solid #93c5fd',
+              background: '#eff6ff', color: '#2563eb', cursor: 'pointer',
+            }}>📸 화면 캡처로 추가</button>
+          )}
+        </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => onSave({
@@ -361,6 +573,15 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
     </div>
   );
 }
+
+const captureBtnPrimary = {
+  padding: '7px 14px', borderRadius: 6, border: '1px solid #222', background: '#222',
+  color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
+};
+const captureBtnSecondary = {
+  padding: '7px 14px', borderRadius: 6, border: '1px solid #ccc', background: '#fff',
+  color: '#222', fontSize: 12.5, cursor: 'pointer',
+};
 
 // 채널/병명 탭 공용 버튼 — ShoppingFoodView.js의 TabButton과 동일한 스타일.
 function TabButton({ label, count, active, onClick }) {
