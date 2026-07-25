@@ -654,7 +654,7 @@ function StatusCheckbox({ checked, onChange, label }) {
   );
 }
 
-function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified }) {
+function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified }) {
   const canWatch = info?.has_replay && info?.replay_url;
   return (
     <tr style={{ borderBottom: '1px solid #eee' }}>
@@ -683,6 +683,11 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
         <StatusCheckbox checked={ep.video_verified} onChange={() => onToggleVideoVerified(ep)} label="영상" />
       </td>
       <td style={{ padding: '6px', verticalAlign: 'top' }}>
+        {ep.links && ep.links.length > 0 && (
+          <StatusCheckbox checked={ep.clip_verified} onChange={() => onToggleClipVerified(ep)} label="클립확인" />
+        )}
+      </td>
+      <td style={{ padding: '6px', verticalAlign: 'top' }}>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {canWatch ? (
             <a href={info.replay_url} target="_blank" rel="noreferrer" style={{ ...actionBtnStyle, borderColor: '#93c5fd', color: '#2563eb' }}>▶ 다시보기</a>
@@ -706,7 +711,7 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
 // 채널/프로그램은 각 행의 부가 정보로만 남긴다 — 2026-07-25 인계 메모 참고.)
 // episodes는 이미 호출부(HealthArchiveView)에서 PAGE_SIZE만큼 잘라서 넘어온다 — 여기서는
 // 받은 것만 그대로 그린다.
-function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified }) {
+function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
@@ -717,6 +722,7 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
           <th style={{ padding: '6px' }}>내용</th>
           <th style={{ padding: '6px', width: 90 }}>블로그</th>
           <th style={{ padding: '6px', width: 90 }}>영상확인</th>
+          <th style={{ padding: '6px', width: 90 }}>클립확인</th>
           <th style={{ padding: '6px', width: 250 }}>관리</th>
         </tr>
       </thead>
@@ -724,10 +730,11 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
         {episodes.map(ep => (
           <EpisodeRow key={ep.id} ep={ep} info={infoMap?.get(`${ep.channel}|${ep.program_name}`)}
             onEdit={onEdit} onDelete={onDelete} onEditMemo={onEditMemo}
-            onToggleBlogUsed={onToggleBlogUsed} onToggleVideoVerified={onToggleVideoVerified} />
+            onToggleBlogUsed={onToggleBlogUsed} onToggleVideoVerified={onToggleVideoVerified}
+            onToggleClipVerified={onToggleClipVerified} />
         ))}
         {episodes.length === 0 && (
-          <tr><td colSpan={7} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
+          <tr><td colSpan={8} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
         )}
       </tbody>
     </table>
@@ -780,7 +787,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   async function handleRefresh() {
     setRefreshing(true);
     const [episodeRows, infoRows] = await Promise.all([
-      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified, memo, image_urls, links'),
+      fetchAllPages('tvdb_program_episodes', 'id, channel, program_name, episode_no, air_date, content, disease_tags, blog_used, video_verified, clip_verified, memo, image_urls, links'),
       fetchAllPages('tvdb_program_info', 'channel, program_name, replay_url, has_replay'),
     ]);
     const map = infoRowsToMap(infoRows);
@@ -960,6 +967,15 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
     setRows(prev => prev.map(r => (r.id === ep.id ? { ...r, video_verified } : r)));
   }
 
+  // 클립확인 = 링크는 이미 있지만(자동/수동으로 찾아 넣은 클립 URL), 그 링크를 실제로 사람이
+  // 열어서 화면캡처하기 좋은 내용인지 직접 확인했는지 추적하는 용도 — video_verified와 같은 성격.
+  async function handleToggleClipVerified(ep) {
+    const clip_verified = !ep.clip_verified;
+    const { error } = await supabase.from('tvdb_program_episodes').update({ clip_verified }).eq('id', ep.id);
+    if (error) { alert('저장 실패: ' + error.message); return; }
+    setRows(prev => prev.map(r => (r.id === ep.id ? { ...r, clip_verified } : r)));
+  }
+
   const programs = byChannel[activeChannel] || [];
   const activeDiseaseEpisodes = byDisease[activeDisease] || [];
   const visibleDiseaseEpisodes = activeDiseaseEpisodes.slice(0, visibleCount);
@@ -1011,6 +1027,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
                 onEditMemo={setMemoEp}
                 onToggleBlogUsed={handleToggleBlogUsed}
                 onToggleVideoVerified={handleToggleVideoVerified}
+                onToggleClipVerified={handleToggleClipVerified}
               />
               {activeDiseaseEpisodes.length > visibleDiseaseEpisodes.length && (
                 <div style={{ textAlign: 'center', margin: '14px 0' }}>
