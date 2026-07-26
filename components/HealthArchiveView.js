@@ -307,7 +307,11 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
   useEffect(() => {
     setMemo(episode?.memo || '');
     setLinks(episode?.links && episode.links.length > 0 ? episode.links : []);
-    setKeptUrls(episode?.image_urls && episode.image_urls.length > 0 ? episode.image_urls : []);
+    // image_urls 안에 완전히 같은 URL이 두 번 이상 들어있는 경우가 실제로 있었다(아래
+    // captureShot의 키보드 연타 레이스 컨디션 참고) — 중복이 그대로 있으면 사용자가 "이미지
+    // 삭제"를 눌러 하나를 지워도 나머지 중복이 남아있어 "삭제해도 그대로다"로 보인다. 여기서
+    // 먼저 중복 제거해 보여주면, 한 번 지우고 저장했을 때 그 URL이 실제로 완전히 사라진다.
+    setKeptUrls(episode?.image_urls ? Array.from(new Set(episode.image_urls)) : []);
     setNewSlots([]);
     cancelCapture();
   }, [episode]);
@@ -670,6 +674,11 @@ function ClipPlayerModal({ clip, onClose, onImageAdded }) {
   const [status, setStatus] = useState('idle'); // idle | loading | playing | error
   const [errorMsg, setErrorMsg] = useState('');
   const [shotState, setShotState] = useState('idle'); // idle | saving | saved
+  // captureShot 재진입 방지용. state(shotState)만으로 막으면 setShotState가 비동기라, 'S'키를
+  // OS 자동反복으로 아주 빠르게 두 번 눌렀을 때 두 호출 다 setShotState('saving')이 반영되기
+  // 전에 가드를 통과해버린다 — 실제로 이 회차(#4248) DB에 타임스탬프가 완전히 같은 캡처 URL이
+  // 중복 저장돼 있던 걸 확인함(2026-07-26). ref는 대입이 동기적이라 이 경합을 막는다.
+  const capturingRef = useRef(false);
 
   useEffect(() => {
     if (!url) return;
@@ -725,7 +734,8 @@ function ClipPlayerModal({ clip, onClose, onImageAdded }) {
   // 안 쓰는 이유도 동일: 한글/특수문자 파일명이 Storage 키를 깨뜨리는 문제가 있었음).
   async function captureShot() {
     const video = videoRef.current;
-    if (!video || status !== 'playing' || shotState === 'saving' || !ep) return;
+    if (!video || status !== 'playing' || capturingRef.current || !ep) return;
+    capturingRef.current = true;
     setShotState('saving');
     try {
       const canvas = canvasRef.current;
@@ -751,6 +761,8 @@ function ClipPlayerModal({ clip, onClose, onImageAdded }) {
     } catch (e) {
       alert('스샷 저장 실패: ' + e.message);
       setShotState('idle');
+    } finally {
+      capturingRef.current = false;
     }
   }
 
@@ -857,6 +869,39 @@ function buildCaptureInstruction(ep) {
 5. Downloads에 새 폴더 만들어서 캡처한 이미지를 저장하고 전달할 것`;
 }
 
+// "📋 지침 복사"(캡처용)와 짝을 이루는 두 번째 복사 버튼 — 캡처가 끝난 회차의 image_urls를
+// Fresh Season 블로그 글에 "활용할 방법을 찾아 쓰라"는 지침이다.
+// 이 텍스트를 받는 클로드는 이 대화도, 이 프로젝트 맥락도 전혀 모르는 완전히 새 세션일 수
+// 있다(2026-07-26 대화에서 사용자가 명시적으로 요구한 전제) — 그래서:
+//  (a) TVDB·Fresh Season이 각각 뭘 하는 프로젝트인지 한 줄로 설명하고
+//  (b) 정확한 MCP 서버 id나 도구 이름을 외워서 아는 것처럼 전제하지 않고, "연결된 MCP 서버
+//      설명 중 이런 문구가 있는 걸 찾아라"는 식으로 스스로 찾아내는 방법을 알려주고
+//  (c) image_urls의 각 항목이 그냥 URL 문자열일 뿐 자동으로 안 열린다는 것, 로컬로 받아서
+//      봐야 한다는 실무 절차까지 적는다.
+// 이 사진들을 어떻게 쓸지에 대한 지침은 같은 대화에서 세 번 정정됐다: (1) 처음엔 회차
+// content를 그대로 글감으로 박아넣었다가 "우리랑 상관없다"는 지적, (2) 그래서 "새 글감을
+// 기획하지 말고 이미 있는 글에 어울리면만 쓰라"로 바꿨더니 "그게 아니라 이 사진을 활용할 수
+// 있게끔 스토리를 잡는 것"이라는 재지적 — 즉 사진에 안 맞는 기존 글을 수동적으로 찾는 게
+// 아니라, 사진 내용에 맞는 새 글감을 능동적으로 만들어도 된다(오히려 그게 목표)는 뜻이었음.
+// 다만 (3) 그 글감은 방송 회차 자체(출연자 개인 사연, 프로그램명 등 DB 텍스트 라벨)를 그대로
+// 옮긴 게 아니라, 사진 속 실제 정보를 Fresh Season 사이트 성격에 맞게 재구성한 것이어야 한다
+// — 그래서 program_name·content·disease_tags 같은 라벨은 여전히 지침 문구에 안 담는다.
+function buildWritingInstruction(ep) {
+  return `[TVDB→Fresh Season] 캡처 이미지 활용 요청 (회차 #${ep.id})
+
+배경 설명(이 대화 맥락을 모르는 세션을 위한 것):
+- TVDB: 홈쇼핑·방송 편성표를 수집하는 아카이브 프로젝트. tvdb_program_episodes 테이블에 방송 회차별로 화면 캡처 이미지를 모아둔다.
+- Fresh Season: 제철 먹거리·건강·TV레시피를 다루는 별도의 블로그 프로젝트. 지금 이 요청은 TVDB에 모아둔 캡처 이미지를, Fresh Season 블로그 글에 쓸 수 있는지 확인해달라는 것이다.
+- 이 대화가 이뤄지는 환경에는 여러 프로젝트의 MCP 서버가 각각 연결돼 있고, 서버마다 "이 서버는 무엇을 하는 서버다"라는 설명이 붙어 있다. 정확한 서버 id나 도구 이름을 미리 알 필요 없이, 그 설명 문구로 찾으면 된다.
+
+절차:
+1. 연결된 MCP 서버 설명 중 "TVDB"·"홈쇼핑/방송편성표"가 언급된 서버를 찾아, 그 서버의 테이블 조회 도구(get_rows 등)로 tvdb_program_episodes 테이블에서 id=${ep.id} 행을 조회할 것
+2. 조회 결과의 image_urls 필드에 이미지 URL들이 들어있다(개수는 회차마다 다르니 조회해서 직접 셀 것) — 각 URL은 공개 이미지 파일 링크다. URL 문자열이나 파일명만 보고 내용을 짐작하지 말고, 몇 개를 실제로 열어서 눈으로 확인할 것(로컬로 내려받아 이미지 도구로 열기, 브라우저로 URL을 직접 열어 보기 등 그 세션에서 쓸 수 있는 방법 아무거나로)
+3. 연결된 MCP 서버 설명 중 "제철 먹거리"·"fresh-season"·"블로그 자동화"가 언급된 서버를 찾아, 그 서버의 지침 조회 도구(get_system_prompt 등)를 id="claude"로 호출해 Fresh Season 작업 방식부터 확인할 것
+4. 사진에 실제로 담긴 내용(성분·수치·효능·주의사항·조리 장면 등)을 확인한 뒤, 그 사진을 자연스럽게 쓸 수 있는 Fresh Season 글감·스토리를 만들 것 — 사진이 활용되도록 이야기를 구성하는 게 목표다. 단, 방송 회차 자체(출연자 개인 사연, 프로그램명·방영 정보 등)를 그대로 옮기지 말고, 사진 속 정보를 Fresh Season 사이트에 맞는 문제해결형 각도(재료 효능·주의사항 등)로 재구성할 것 — 이때도 Fresh Season의 정상적인 기획 절차(벤치마킹·사실관계 검증·제목 확정 등)는 그대로 따를 것
+5. 사진 내용이 Fresh Season과 도저히 안 맞아서 쓸 이야기를 못 만들겠으면, 억지로 만들지 말고 사용자에게 그렇게 보고할 것`;
+}
+
 function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified, onPlayClip }) {
   const canWatch = info?.has_replay && info?.replay_url;
   const [copied, setCopied] = useState(false);
@@ -864,6 +909,13 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
     navigator.clipboard.writeText(buildCaptureInstruction(ep)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+    });
+  }
+  const [writingCopied, setWritingCopied] = useState(false);
+  function copyWritingInstruction() {
+    navigator.clipboard.writeText(buildWritingInstruction(ep)).then(() => {
+      setWritingCopied(true);
+      setTimeout(() => setWritingCopied(false), 1500);
     });
   }
   return (
@@ -875,6 +927,11 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
           border: '1px solid #ccc', background: copied ? '#dcfce7' : '#fff',
           color: copied ? '#16a34a' : '#888', cursor: 'pointer', whiteSpace: 'nowrap',
         }}>{copied ? '✓ 복사됨' : '📋 지침 복사'}</button>
+        <button onClick={copyWritingInstruction} title="이 회차 이미지로 블로그 글쓰기 지침 복사" style={{
+          display: 'block', marginTop: 4, padding: '2px 6px', fontSize: 10.5, borderRadius: 4,
+          border: '1px solid #ccc', background: writingCopied ? '#dcfce7' : '#fff',
+          color: writingCopied ? '#16a34a' : '#7c3aed', cursor: 'pointer', whiteSpace: 'nowrap',
+        }}>{writingCopied ? '✓ 복사됨' : '📝 글쓰기 지침복사'}</button>
       </td>
       <td style={{ padding: '6px', color: '#888', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.air_date || '-'}</td>
       <td style={{ padding: '6px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{ep.channel}</td>
@@ -1193,7 +1250,9 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
       }
       uploadedUrls.push(supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl);
     }
-    const combinedUrls = [...keptUrls, ...uploadedUrls];
+    // 중복 URL이 남아있으면 저장할 때마다 다시 끼어들 수 있으니 여기서도 한 번 더 걸러낸다
+    // (모달 진입 시 dedupe와 별개로, 저장 경로 자체를 항상 깨끗하게 유지하기 위한 안전장치).
+    const combinedUrls = Array.from(new Set([...keptUrls, ...uploadedUrls]));
     const image_urls = combinedUrls.length > 0 ? combinedUrls : null;
     const memoValue = memo?.trim() ? memo.trim() : null;
     const linksValue = links && links.length > 0 ? links : null;
