@@ -1005,8 +1005,23 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
 3. 채널별로 클립·다시보기 링크 찾는 방법이 다 다르므로, 손대기 전에 tvdb_channel_notes에서
    그 채널 행을 먼저 확인할 것(이미 검증된 방법이 있으면 그대로 재사용, 없으면 새로 찾아서
    기록해둘 것)
-4. 찾은 링크는 upsert_row로 links 컬럼에 저장
-5. 새 방법을 알아냈거나 기존 방법이 바뀐 걸 발견하면 tvdb_channel_notes에도 기록해서
+4. **회차가 오래돼서 사이트 랜딩페이지의 "최근 클립 목록"(보통 10여 개까지만 보임)에 안
+   잡힌다고 바로 "못 찾음"으로 넘기지 말 것.** TV조선은 특히
+   POST https://vod.tvchosun.com/vod/getVodReplayOrderByPagingInfo.cstv
+   (data: page=N, order_type=latest, search_text=(빈값), year=all, prog_id={prog_id})로
+   페이지를 넘기면 훨씬 옛날 회차까지 다 나온다(year=all 필수 — 빈 문자열이면 빈 배열만 옴).
+   응답의 prog[].epis_code를 찾으면 https://vod.tvchosun.com/vod/3/{prog_id}/{epis_code}/vod.cstv
+   가 그 회차의 전체 다시보기 링크. 다른 채널도 "안 보인다"고 단정하기 전에 페이지네이션/API가
+   더 있는지부터 의심할 것(2026-07-26에 이걸 안 써보고 여러 건을 잘못 스킵했다가 사용자가
+   직접 찾아줘서 뒤늦게 정정한 사례 있음).
+   MBN도 마찬가지 — programMain 페이지는 최근 4개만 보여주지만
+   POST https://www.mbn.co.kr/lib/module/program/getProgramReviewThumViewList_E.php
+   (data: menuType=50, menuCode={boardId}, prog_seq_no={progCode}, page=N, cnt=4)로
+   더 오래된 회차까지 찾을 수 있다(boardId는 programContents/{progCode}/{boardId} URL에서 얻음).
+   응답에서 회차번호+내용이 붙어있는 항목의 contentId를 뽑아
+   https://www.mbn.co.kr/vod/programContents/previewlist/{progCode}/{boardId}/{contentId} 로 저장.
+5. 찾은 링크는 upsert_row로 links 컬럼에 저장
+6. 새 방법을 알아냈거나 기존 방법이 바뀐 걸 발견하면 tvdb_channel_notes에도 기록해서
    다음 세션이 재사용할 수 있게 할 것`;
     navigator.clipboard.writeText(text).then(() => {
       setLinksInstrCopied(true);
