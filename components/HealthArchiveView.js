@@ -642,6 +642,109 @@ const captureBtnSecondary = {
   color: '#222', fontSize: 12.5, cursor: 'pointer',
 };
 
+// "🎬 클립N" 버튼으로 여는 모달 — tvchosun.com 클립 페이지를 그대로 iframe에 못 넣는다
+// (그 페이지가 X-Frame-Options: SAMEORIGIN이라 브라우저가 막음). 그래서 서버 API
+// (pages/api/resolve-stream.js)가 그 페이지를 대신 fetch해서 실제 재생 스트림(m3u8) 주소만
+// 뽑아 돌려주면, 그 주소를 hls.js로 우리 쪽 <video>에 직접 물려서 재생한다. hls.js는 레포에
+// 새 npm 의존성을 안 늘리려고 CDN에서 그때그때 불러온다(이미 로드돼있으면 재사용).
+let hlsJsPromise = null;
+function ensureHlsJs() {
+  if (window.Hls) return Promise.resolve();
+  if (hlsJsPromise) return hlsJsPromise;
+  hlsJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js';
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('hls.js 로드 실패'));
+    document.head.appendChild(script);
+  });
+  return hlsJsPromise;
+}
+
+function ClipPlayerModal({ url, onClose }) {
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
+  const [status, setStatus] = useState('idle'); // idle | loading | playing | error
+  const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (!url) return;
+    setStatus('loading');
+    setErrorMsg('');
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(`/api/resolve-stream?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !data.src) throw new Error(data.error || '스트림 주소를 찾지 못했습니다');
+
+        await ensureHlsJs();
+        if (cancelled) return;
+
+        const video = videoRef.current;
+        if (window.Hls && window.Hls.isSupported()) {
+          const hls = new window.Hls();
+          hlsRef.current = hls;
+          hls.loadSource(data.src);
+          hls.attachMedia(video);
+          hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+            if (!cancelled) { setStatus('playing'); video.play().catch(() => {}); }
+          });
+          hls.on(window.Hls.Events.ERROR, (_e, d) => {
+            if (d.fatal && !cancelled) { setStatus('error'); setErrorMsg('재생 중 오류가 발생했습니다'); }
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = data.src;
+          setStatus('playing');
+          video.play().catch(() => {});
+        } else {
+          throw new Error('이 브라우저는 HLS 재생을 지원하지 않습니다');
+        }
+      } catch (e) {
+        if (!cancelled) { setStatus('error'); setErrorMsg(e.message); }
+      }
+    }
+    load();
+
+    return () => {
+      cancelled = true;
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+      if (videoRef.current) { videoRef.current.pause(); videoRef.current.removeAttribute('src'); videoRef.current.load(); }
+    };
+  }, [url]);
+
+  if (!url) return null;
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300, padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#000', borderRadius: 10, padding: 12, maxWidth: 800, width: '100%',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#fff', lineHeight: 1 }}>✕</button>
+        </div>
+        {status === 'loading' && <p style={{ color: '#fff', textAlign: 'center', padding: '60px 0' }}>불러오는 중...</p>}
+        {status === 'error' && (
+          <div style={{ color: '#fca5a5', textAlign: 'center', padding: '40px 0' }}>
+            <p>{errorMsg}</p>
+            <a href={url} target="_blank" rel="noreferrer" style={{ color: '#93c5fd' }}>원본 페이지에서 열기 ↗</a>
+          </div>
+        )}
+        <video ref={videoRef} controls playsInline style={{
+          width: '100%', maxHeight: '75vh', display: status === 'error' ? 'none' : 'block', background: '#000',
+        }} />
+      </div>
+    </div>
+  );
+}
+
 // 채널/병명 탭 공용 버튼 — ShoppingFoodView.js의 TabButton과 동일한 스타일.
 function TabButton({ label, count, active, onClick }) {
   return (
@@ -692,7 +795,7 @@ function buildCaptureInstruction(ep) {
 5. Downloads에 새 폴더 만들어서 캡처한 이미지를 저장하고 전달할 것`;
 }
 
-function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified }) {
+function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified, onPlayClip }) {
   const canWatch = info?.has_replay && info?.replay_url;
   const [copied, setCopied] = useState(false);
   function copyInstruction() {
@@ -739,7 +842,7 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
             <span style={{ ...actionBtnStyle, color: '#bbb', cursor: 'default' }}>다시보기 없음</span>
           )}
           {ep.links && ep.links.map((l, i) => (
-            <a key={i} href={l} target="_blank" rel="noreferrer" style={{ ...actionBtnStyle, borderColor: '#c4b5fd', color: '#7c3aed' }}>🎬 클립{i + 1}</a>
+            <button key={i} onClick={() => onPlayClip(l)} style={{ ...actionBtnStyle, borderColor: '#c4b5fd', color: '#7c3aed' }}>🎬 클립{i + 1}</button>
           ))}
           <button onClick={() => onEdit(ep)} style={actionBtnStyle}>분류수정</button>
           <button onClick={() => onEditMemo(ep)} style={actionBtnStyle}>📝 메모·이미지</button>
@@ -755,7 +858,7 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
 // 채널/프로그램은 각 행의 부가 정보로만 남긴다 — 2026-07-25 인계 메모 참고.)
 // episodes는 이미 호출부(HealthArchiveView)에서 PAGE_SIZE만큼 잘라서 넘어온다 — 여기서는
 // 받은 것만 그대로 그린다.
-function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified }) {
+function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggleBlogUsed, onToggleVideoVerified, onToggleClipVerified, onPlayClip }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
@@ -774,7 +877,7 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
           <EpisodeRow key={ep.id} ep={ep} info={infoMap?.get(`${ep.channel}|${ep.program_name}`)}
             onEdit={onEdit} onDelete={onDelete} onEditMemo={onEditMemo}
             onToggleBlogUsed={onToggleBlogUsed} onToggleVideoVerified={onToggleVideoVerified}
-            onToggleClipVerified={onToggleClipVerified} />
+            onToggleClipVerified={onToggleClipVerified} onPlayClip={onPlayClip} />
         ))}
         {episodes.length === 0 && (
           <tr><td colSpan={7} style={{ padding: 16, color: '#888' }}>해당 병명으로 분류된 회차가 없습니다.</td></tr>
@@ -824,6 +927,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
 
   const [memoEp, setMemoEp] = useState(null); // 병명 탭 — 메모·이미지 수정 대상 회차
   const [memoBusy, setMemoBusy] = useState(false);
+  const [playClipUrl, setPlayClipUrl] = useState(null); // "🎬 클립N" 버튼으로 재생 중인 클립 페이지 URL
 
   // ISR 스냅샷이 최대 10분 묵을 수 있어서, 다른 세션(관리자 화면, 수집 스크립트, 다른 방문자의
   // 편집)이 그 사이 바꾼 내용까지 지금 보고 싶을 때 누르는 수동 새로고침.
@@ -1075,6 +1179,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
                 onToggleBlogUsed={handleToggleBlogUsed}
                 onToggleVideoVerified={handleToggleVideoVerified}
                 onToggleClipVerified={handleToggleClipVerified}
+                onPlayClip={setPlayClipUrl}
               />
               {activeDiseaseEpisodes.length > visibleDiseaseEpisodes.length && (
                 <div style={{ textAlign: 'center', margin: '14px 0' }}>
@@ -1152,6 +1257,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
       <CategoryEditModal episode={editingEp} onSave={handleSaveCategories} onClose={() => setEditingEp(null)} busy={editBusy} />
       <EpisodeDeleteConfirm episode={epConfirm} onConfirm={handleConfirmDeleteEpisode} onCancel={() => setEpConfirm(null)} busy={epConfirmBusy} />
       <MemoImageModal episode={memoEp} onSave={handleSaveMemoImage} onClose={() => setMemoEp(null)} busy={memoBusy} />
+      <ClipPlayerModal url={playClipUrl} onClose={() => setPlayClipUrl(null)} />
     </div>
   );
 }
