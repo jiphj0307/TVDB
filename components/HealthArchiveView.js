@@ -468,7 +468,9 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
     }, 'image/png');
   }
 
-  const modalMaxWidth = captureStep ? 640 : 480;
+  // 이미지를 2열 그리드로 보여주려고 모달 자체를 더 넓혔다(480 -> 760) — 캡처 단계는 원래
+  // 화면 공유 미리보기 크기에 맞춰져 있어 그대로 640 유지.
+  const modalMaxWidth = captureStep ? 640 : 760;
 
   return (
     <div onClick={onClose} style={{
@@ -578,11 +580,12 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
             marginBottom: 8, padding: 8, borderRadius: 8,
             border: dragOver ? '2px dashed #2563eb' : '2px dashed #ddd',
             background: dragOver ? '#eff6ff' : 'transparent',
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10,
           }}
         >
           {keptUrls.map((url, idx) => (
-            <div key={`kept-${idx}`} style={{ marginBottom: 8 }}>
-              <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 6, display: 'block' }} />
+            <div key={`kept-${idx}`}>
+              <img src={url} alt="" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
               <button type="button" onClick={() => removeKeptUrl(idx)} style={{
                 marginTop: 6, padding: '3px 9px', fontSize: 11.5, borderRadius: 6, border: '1px solid #fecaca',
                 background: '#fff', color: '#dc2626', cursor: 'pointer',
@@ -590,16 +593,16 @@ function MemoImageModal({ episode, onSave, onClose, busy }) {
             </div>
           ))}
           {newSlots.map((slot, idx) => (
-            <div key={`new-${idx}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 8 }}>
-              <img src={slot.preview} alt="" style={{ flex: 1, maxWidth: '100%', maxHeight: 180, borderRadius: 6, display: 'block' }} />
+            <div key={`new-${idx}`}>
+              <img src={slot.preview} alt="" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
               <button type="button" onClick={() => removeImageSlot(idx)} title="이 이미지 취소" style={{
-                flexShrink: 0, padding: '0 12px', borderRadius: 6, border: '1px solid #fecaca',
-                background: '#fff', color: '#dc2626', fontSize: 14, cursor: 'pointer',
-              }}>−</button>
+                marginTop: 6, padding: '3px 9px', fontSize: 11.5, borderRadius: 6, border: '1px solid #fecaca',
+                background: '#fff', color: '#dc2626', cursor: 'pointer',
+              }}>이미지 취소</button>
             </div>
           ))}
           {keptUrls.length === 0 && newSlots.length === 0 && (
-            <p style={{ margin: 0, padding: '10px 0', fontSize: 12, color: '#999', textAlign: 'center' }}>
+            <p style={{ gridColumn: '1 / -1', margin: 0, padding: '10px 0', fontSize: 12, color: '#999', textAlign: 'center' }}>
               여기로 이미지 파일을 여러 장 한꺼번에 드래그해서 놓을 수 있어요
             </p>
           )}
