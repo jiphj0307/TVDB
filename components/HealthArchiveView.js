@@ -965,6 +965,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   const [infoMap, setInfoMap] = useState(() => infoRowsToMap(initialInfoRows));
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(generatedAt ? new Date(generatedAt) : null);
+  const [linksInstrCopied, setLinksInstrCopied] = useState(false);
 
   // 기본 화면은 병명별 보기. 채널별 보기는 예전 화면을 그대로 보조 탭으로 남겨둔 것
   // (2026-07-25 사용자 확인: 완전 삭제 대신 보조 탭 유지).
@@ -990,6 +991,28 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   const [memoEp, setMemoEp] = useState(null); // 병명 탭 — 메모·이미지 수정 대상 회차
   const [memoBusy, setMemoBusy] = useState(false);
   const [playClip, setPlayClip] = useState(null); // "🎬 클립N" 버튼으로 재생 중인 { ep, url }
+
+  // 회차별 "📋 지침 복사"(buildCaptureInstruction)는 이미 링크가 있는 회차 하나를 스샷하라는
+  // 지침이고, 이건 그 반대 — 아직 links가 비어있는 회차들을 찾아서 채워달라는 페이지 단위 지침.
+  // 특정 회차 id가 없어 범용 문구라, 어떤 채널/병명부터 할지는 대화에서 사용자가 지정해주는
+  // 걸 전제로 한다(무작정 전체를 다 시키면 범위가 너무 커짐).
+  function copyLinksInstruction() {
+    const text = `[TVDB] 다시보기·클립 링크 채워넣기 작업 요청
+
+1. TVDB MCP 서버에 연결해서 get_system_prompt로 최신 방법론부터 확인할 것
+2. get_rows로 tvdb_program_episodes에서 links가 비어있는(NULL 또는 빈 배열) 회차를 조회
+   (채널/프로그램/병명 카테고리 등 범위는 대화에서 별도로 지정된 조건을 따를 것)
+3. 채널별로 클립·다시보기 링크 찾는 방법이 다 다르므로, 손대기 전에 tvdb_channel_notes에서
+   그 채널 행을 먼저 확인할 것(이미 검증된 방법이 있으면 그대로 재사용, 없으면 새로 찾아서
+   기록해둘 것)
+4. 찾은 링크는 upsert_row로 links 컬럼에 저장
+5. 새 방법을 알아냈거나 기존 방법이 바뀐 걸 발견하면 tvdb_channel_notes에도 기록해서
+   다음 세션이 재사용할 수 있게 할 것`;
+    navigator.clipboard.writeText(text).then(() => {
+      setLinksInstrCopied(true);
+      setTimeout(() => setLinksInstrCopied(false), 1500);
+    });
+  }
 
   // ISR 스냅샷이 최대 10분 묵을 수 있어서, 다른 세션(관리자 화면, 수집 스크립트, 다른 방문자의
   // 편집)이 그 사이 바꾼 내용까지 지금 보고 싶을 때 누르는 수동 새로고침.
@@ -1220,6 +1243,10 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
           padding: '6px 12px', borderRadius: 999, border: '1px solid #ccc', fontSize: 12.5, cursor: 'pointer',
           background: '#fff', color: '#444', opacity: refreshing ? 0.6 : 1,
         }}>{refreshing ? '새로고침 중...' : '🔄 새로고침'}</button>
+        <button onClick={copyLinksInstruction} title="links가 비어있는 회차들에 다시보기/클립 링크를 채워달라는 작업지침 복사" style={{
+          padding: '6px 12px', borderRadius: 999, border: '1px solid #ccc', fontSize: 12.5, cursor: 'pointer',
+          background: linksInstrCopied ? '#dcfce7' : '#fff', color: linksInstrCopied ? '#16a34a' : '#444',
+        }}>{linksInstrCopied ? '✓ 복사됨' : '📋 링크 채우기 지침 복사'}</button>
         {lastUpdated && (
           <span style={{ fontSize: 11.5, color: '#999' }}>
             마지막 갱신 {lastUpdated.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
