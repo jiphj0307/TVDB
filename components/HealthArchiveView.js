@@ -754,12 +754,12 @@ function ClipPlayerModal({ clip, onClose, onImageAdded }) {
     }
   }
 
-  // 스페이스바로도 캡처 — 영상 보다가 마우스 안 옮기고 바로바로 찍을 수 있게. 브라우저 기본
-  // 스페이스바 동작(재생/정지 토글, 페이지 스크롤)과 겹치니 반드시 preventDefault로 막는다.
+  // S키로도 캡처 — 영상 보다가 마우스 안 옮기고 바로바로 찍을 수 있게. 스페이스바는 비디오 기본
+  // 재생/정지 토글과 겹쳐서 쓰지 않고, 그 동작을 그대로 살려두기 위해 S를 쓴다.
   useEffect(() => {
     if (!url) return;
     function onKeyDown(e) {
-      if (e.code === 'Space' || e.key === ' ') {
+      if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
         captureShot();
       }
@@ -787,7 +787,7 @@ function ClipPlayerModal({ clip, onClose, onImageAdded }) {
             color: shotState === 'saved' ? '#fff' : '#2563eb',
             opacity: status === 'playing' ? 1 : 0.5,
           }}>
-            {shotState === 'saving' ? '저장 중...' : shotState === 'saved' ? '✓ 저장됨' : '📸 스샷 (Space)'}
+            {shotState === 'saving' ? '저장 중...' : shotState === 'saved' ? '✓ 저장됨' : '📸 스샷 (S)'}
           </button>
           <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#fff', lineHeight: 1 }}>✕</button>
         </div>
