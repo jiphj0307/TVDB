@@ -661,11 +661,15 @@ function ensureHlsJs() {
   return hlsJsPromise;
 }
 
-function ClipPlayerModal({ url, onClose }) {
+function ClipPlayerModal({ clip, onClose, onImageAdded }) {
+  const url = clip?.url;
+  const ep = clip?.ep;
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
+  const canvasRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | loading | playing | error
   const [errorMsg, setErrorMsg] = useState('');
+  const [shotState, setShotState] = useState('idle'); // idle | saving | saved
 
   useEffect(() => {
     if (!url) return;
@@ -716,6 +720,54 @@ function ClipPlayerModal({ url, onClose }) {
     };
   }, [url]);
 
+  // 현재 재생 프레임을 캔버스로 그려서 그대로 Storage에 올리고, 그 회차 image_urls에 이어붙인다
+  // (기존 메모·이미지 모달의 handleSaveMemoImage와 같은 버킷/경로 규칙 — 파일명에 원본 이름을
+  // 안 쓰는 이유도 동일: 한글/특수문자 파일명이 Storage 키를 깨뜨리는 문제가 있었음).
+  async function captureShot() {
+    const video = videoRef.current;
+    if (!video || status !== 'playing' || shotState === 'saving' || !ep) return;
+    setShotState('saving');
+    try {
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!blob) throw new Error('캡처 실패');
+
+      const path = `${ep.id}-${Date.now()}-clip.jpg`;
+      const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, { upsert: true });
+      if (uploadError) throw uploadError;
+      const newUrl = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+
+      const nextUrls = [...(ep.image_urls || []), newUrl];
+      const { error: dbError } = await supabase.from('tvdb_program_episodes').update({ image_urls: nextUrls }).eq('id', ep.id);
+      if (dbError) throw dbError;
+
+      ep.image_urls = nextUrls; // 같은 클립 모달에서 연속으로 여러 장 찍을 때 누적되도록 로컬 참조도 갱신
+      onImageAdded(ep.id, newUrl);
+      setShotState('saved');
+      setTimeout(() => setShotState('idle'), 900);
+    } catch (e) {
+      alert('스샷 저장 실패: ' + e.message);
+      setShotState('idle');
+    }
+  }
+
+  // 스페이스바로도 캡처 — 영상 보다가 마우스 안 옮기고 바로바로 찍을 수 있게. 브라우저 기본
+  // 스페이스바 동작(재생/정지 토글, 페이지 스크롤)과 겹치니 반드시 preventDefault로 막는다.
+  useEffect(() => {
+    if (!url) return;
+    function onKeyDown(e) {
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        captureShot();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [url, status, shotState]);
+
   if (!url) return null;
 
   return (
@@ -727,7 +779,16 @@ function ClipPlayerModal({ url, onClose }) {
         background: '#000', borderRadius: 10, padding: 12, maxWidth: 800, width: '100%',
         boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <button onClick={captureShot} disabled={status !== 'playing' || shotState === 'saving'} style={{
+            padding: '6px 12px', borderRadius: 6, border: 'none', fontSize: 12.5, fontWeight: 700,
+            cursor: status === 'playing' ? 'pointer' : 'default',
+            background: shotState === 'saved' ? '#16a34a' : '#eff6ff',
+            color: shotState === 'saved' ? '#fff' : '#2563eb',
+            opacity: status === 'playing' ? 1 : 0.5,
+          }}>
+            {shotState === 'saving' ? '저장 중...' : shotState === 'saved' ? '✓ 저장됨' : '📸 스샷 (Space)'}
+          </button>
           <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: '#fff', lineHeight: 1 }}>✕</button>
         </div>
         {status === 'loading' && <p style={{ color: '#fff', textAlign: 'center', padding: '60px 0' }}>불러오는 중...</p>}
@@ -740,6 +801,7 @@ function ClipPlayerModal({ url, onClose }) {
         <video ref={videoRef} controls playsInline style={{
           width: '100%', maxHeight: '75vh', display: status === 'error' ? 'none' : 'block', background: '#000',
         }} />
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
       </div>
     </div>
   );
@@ -842,7 +904,7 @@ function EpisodeRow({ ep, info, onEdit, onDelete, onEditMemo, onToggleBlogUsed, 
             <span style={{ ...actionBtnStyle, color: '#bbb', cursor: 'default' }}>다시보기 없음</span>
           )}
           {ep.links && ep.links.map((l, i) => (
-            <button key={i} onClick={() => onPlayClip(l)} style={{ ...actionBtnStyle, borderColor: '#c4b5fd', color: '#7c3aed' }}>🎬 클립{i + 1}</button>
+            <button key={i} onClick={() => onPlayClip(ep, l)} style={{ ...actionBtnStyle, borderColor: '#c4b5fd', color: '#7c3aed' }}>🎬 클립{i + 1}</button>
           ))}
           <button onClick={() => onEdit(ep)} style={actionBtnStyle}>분류수정</button>
           <button onClick={() => onEditMemo(ep)} style={actionBtnStyle}>📝 메모·이미지</button>
@@ -927,7 +989,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
 
   const [memoEp, setMemoEp] = useState(null); // 병명 탭 — 메모·이미지 수정 대상 회차
   const [memoBusy, setMemoBusy] = useState(false);
-  const [playClipUrl, setPlayClipUrl] = useState(null); // "🎬 클립N" 버튼으로 재생 중인 클립 페이지 URL
+  const [playClip, setPlayClip] = useState(null); // "🎬 클립N" 버튼으로 재생 중인 { ep, url }
 
   // ISR 스냅샷이 최대 10분 묵을 수 있어서, 다른 세션(관리자 화면, 수집 스크립트, 다른 방문자의
   // 편집)이 그 사이 바꾼 내용까지 지금 보고 싶을 때 누르는 수동 새로고침.
@@ -1104,6 +1166,12 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
     setMemoEp(null);
   }
 
+  // ClipPlayerModal(🎬 클립N 재생창)이 자체적으로 캡처→Storage 업로드→DB update까지 다 끝낸 뒤,
+  // 화면의 rows 상태만 이걸로 동기화한다(별도 재조회 없이 즉시 반영).
+  function handleClipImageAdded(epId, newUrl) {
+    setRows(prev => prev.map(r => (r.id === epId ? { ...r, image_urls: [...(r.image_urls || []), newUrl] } : r)));
+  }
+
   async function handleToggleBlogUsed(ep) {
     const blog_used = !ep.blog_used;
     const { error } = await supabase.from('tvdb_program_episodes').update({ blog_used }).eq('id', ep.id);
@@ -1179,7 +1247,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
                 onToggleBlogUsed={handleToggleBlogUsed}
                 onToggleVideoVerified={handleToggleVideoVerified}
                 onToggleClipVerified={handleToggleClipVerified}
-                onPlayClip={setPlayClipUrl}
+                onPlayClip={(ep, url) => setPlayClip({ ep, url })}
               />
               {activeDiseaseEpisodes.length > visibleDiseaseEpisodes.length && (
                 <div style={{ textAlign: 'center', margin: '14px 0' }}>
@@ -1257,7 +1325,7 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
       <CategoryEditModal episode={editingEp} onSave={handleSaveCategories} onClose={() => setEditingEp(null)} busy={editBusy} />
       <EpisodeDeleteConfirm episode={epConfirm} onConfirm={handleConfirmDeleteEpisode} onCancel={() => setEpConfirm(null)} busy={epConfirmBusy} />
       <MemoImageModal episode={memoEp} onSave={handleSaveMemoImage} onClose={() => setMemoEp(null)} busy={memoBusy} />
-      <ClipPlayerModal url={playClipUrl} onClose={() => setPlayClipUrl(null)} />
+      <ClipPlayerModal clip={playClip} onClose={() => setPlayClip(null)} onImageAdded={handleClipImageAdded} />
     </div>
   );
 }
