@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
 import { DISEASE_DEFS, OTHER_LABEL } from '../lib/diseaseClassifier';
 
@@ -1021,6 +1022,11 @@ function DiseaseTable({ episodes, infoMap, onEdit, onDelete, onEditMemo, onToggl
 // 네트워크 요청이 필요 없다. 삭제/분류수정/체크박스 조작은 그대로 클라이언트에서 즉시 반영하고,
 // "새로고침" 버튼을 누르면 fetchAllPages로 캐시(ISR 스냅샷)를 건너뛰고 최신 상태를 다시 받는다.
 export default function HealthArchiveView({ initialRows, initialInfoRows, generatedAt }) {
+  // 탭(병명별/채널별 + 그 안에서 고른 병명·채널)을 URL 쿼리스트링에 반영해서, 새로고침해도
+  // 마지막으로 보던 탭이 그대로 유지되게 한다(2026-07-27, 사용자가 새로고침하면 항상 첫 탭으로
+  // 돌아가는 걸 지적). BroadcastPanel.js가 이미 같은 패턴(탭 상태 <-> router.query 동기화)을
+  // 쓰고 있어서 그 방식을 그대로 가져왔다.
+  const router = useRouter();
   const [rows, setRows] = useState(initialRows || []);
   const [infoMap, setInfoMap] = useState(() => infoRowsToMap(initialInfoRows));
   const [refreshing, setRefreshing] = useState(false);
@@ -1135,8 +1141,16 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   }, [byDisease]);
 
   useEffect(() => {
-    if (!activeDisease && diseaseKeys.length > 0) setActiveDisease(diseaseKeys[0]);
-  }, [diseaseKeys, activeDisease]);
+    if (!activeDisease && diseaseKeys.length > 0) {
+      // router.isReady가 되기 전(첫 렌더)엔 router.query가 항상 빈 객체라, 그 상태로 먼저
+      // 판단해버리면 새로고침 직후 잠깐이라도 무조건 diseaseKeys[0]으로 초기화된다. 새로고침
+      // 유지가 핵심 요구사항이라 router.isReady를 기다렸다가 쿼리에 있는 값을 우선한다.
+      if (!router.isReady) return;
+      const q = router.query;
+      const fromQuery = q.view !== 'channel' && typeof q.tab === 'string' && diseaseKeys.includes(q.tab) ? q.tab : diseaseKeys[0];
+      setActiveDisease(fromQuery);
+    }
+  }, [diseaseKeys, activeDisease, router.isReady]);
 
   // 병명 탭을 바꿀 때마다 다시 최신 PAGE_SIZE건부터 보여준다(이전 탭에서 눌러둔 "더 보기"가
   // 다음 탭까지 이어지지 않도록).
@@ -1167,8 +1181,31 @@ export default function HealthArchiveView({ initialRows, initialInfoRows, genera
   );
 
   useEffect(() => {
-    if (!activeChannel && channels.length > 0) setActiveChannel(channels[0]);
-  }, [channels, activeChannel]);
+    if (!activeChannel && channels.length > 0) {
+      if (!router.isReady) return;
+      const q = router.query;
+      const fromQuery = q.view === 'channel' && typeof q.channel === 'string' && channels.includes(q.channel) ? q.channel : channels[0];
+      setActiveChannel(fromQuery);
+    }
+  }, [channels, activeChannel, router.isReady]);
+
+  // 새로고침 시 어느 탭(병명별/채널별)이었는지도 함께 복원. viewMode 기본값이 이미 'disease'라
+  // 쿼리가 'channel'일 때만 실제로 바꿔주면 된다.
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.view === 'channel') setViewMode('channel');
+  }, [router.isReady]);
+
+  // 위 두 복원 effect와 반대 방향 — 사용자가 탭이나 병명/채널을 바꿀 때마다 그 상태를 URL에
+  // 반영해서, 이 상태에서 새로고침(F5)해도 같은 URL을 다시 요청해 같은 탭으로 돌아오게 한다.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const query = { view: viewMode };
+    if (viewMode === 'disease' && activeDisease) query.tab = activeDisease;
+    if (viewMode === 'channel' && activeChannel) query.channel = activeChannel;
+    router.replace({ pathname: router.pathname, query }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, activeDisease, activeChannel, router.isReady]);
 
   async function openProgram(channel, programName) {
     setOpened({ channel, program_name: programName, info: infoMap.get(`${channel}|${programName}`) });
